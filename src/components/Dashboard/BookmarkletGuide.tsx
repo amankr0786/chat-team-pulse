@@ -15,25 +15,51 @@ export function BookmarkletGuide() {
     const API_URL = '${SUPABASE_URL}/functions/v1/sync-team';
     
     function getTeamData() {
-      const teamName = document.querySelector('[data-testid="team-name"]')?.textContent 
-        || document.querySelector('.team-name')?.textContent
-        || document.querySelector('h1')?.textContent?.trim()
-        || 'Unknown Team';
+      /* Try to get team name from various places */
+      const teamName = document.querySelector('h1')?.textContent?.trim()
+        || document.querySelector('[class*="team"]')?.textContent?.trim()
+        || document.querySelector('header h1, header h2')?.textContent?.trim()
+        || document.title.split('-')[0]?.trim()
+        || 'ChatGPT Team';
       
-      const memberRows = document.querySelectorAll('table tbody tr, [role="row"]');
       const members = [];
       
-      memberRows.forEach(row => {
-        const cells = row.querySelectorAll('td, [role="cell"]');
-        if (cells.length >= 2) {
-          const name = cells[0]?.textContent?.trim();
-          const email = cells[1]?.textContent?.trim();
-          const role = cells[2]?.textContent?.trim() || 'member';
-          if (email && email.includes('@')) {
-            members.push({ name, email, role: role.toLowerCase() });
+      /* Method 1: Look for email patterns in the page */
+      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;
+      const allText = document.body.innerText;
+      const foundEmails = [...new Set(allText.match(emailRegex) || [])];
+      
+      /* Method 2: Find rows/items containing emails */
+      const allElements = document.querySelectorAll('tr, [role="row"], [class*="member"], [class*="user"], [class*="row"], li, div[class*="item"]');
+      
+      allElements.forEach(el => {
+        const text = el.innerText || el.textContent || '';
+        const emailMatch = text.match(emailRegex);
+        if (emailMatch && emailMatch[0]) {
+          const email = emailMatch[0];
+          /* Get name - usually the text before the email or in a specific element */
+          const lines = text.split('\\n').map(l => l.trim()).filter(l => l);
+          let name = lines[0] || '';
+          if (name.includes('@')) name = email.split('@')[0];
+          
+          /* Try to find role */
+          const lowerText = text.toLowerCase();
+          let role = 'member';
+          if (lowerText.includes('owner') || lowerText.includes('admin')) role = 'owner';
+          else if (lowerText.includes('admin')) role = 'admin';
+          
+          if (!members.find(m => m.email === email)) {
+            members.push({ name: name.substring(0, 100), email, role });
           }
         }
       });
+      
+      /* Fallback: if no members found via elements, use found emails */
+      if (members.length === 0 && foundEmails.length > 0) {
+        foundEmails.forEach(email => {
+          members.push({ name: email.split('@')[0], email, role: 'member' });
+        });
+      }
       
       return { teamName, members };
     }
@@ -41,7 +67,9 @@ export function BookmarkletGuide() {
     const data = getTeamData();
     
     if (data.members.length === 0) {
-      alert('No members found on this page. Make sure you are on the ChatGPT Team admin members page.');
+      /* Debug mode - show what we can see */
+      const debug = 'Page URL: ' + location.href + '\\n\\nVisible emails on page: ' + (document.body.innerText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || []).slice(0,5).join(', ');
+      alert('No members found.\\n\\n' + debug + '\\n\\nMake sure member emails are visible on the page.');
       return;
     }
     
