@@ -4,10 +4,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Download, Users, Mail } from 'lucide-react';
+import { Download, Users, Mail, Calendar } from 'lucide-react';
 import { Team, useTeamMembers, useSyncHistory } from '@/hooks/useTeams';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
+
+function capitalizeRole(role: string | null): string {
+  if (!role) return 'Member';
+  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+}
 
 interface TeamDetailsProps {
   team: Team | null;
@@ -27,12 +32,12 @@ export function TeamDetails({ team, open, onClose }: TeamDetailsProps) {
   const exportToCSV = () => {
     if (!members || !team) return;
     
-    const headers = ['Name', 'Email', 'Role', 'Joined At'];
+    const headers = ['Name', 'Email', 'Role', 'Date Added'];
     const rows = members.map(m => [
       m.name || '',
       m.email,
-      m.role,
-      m.joined_at ? format(new Date(m.joined_at), 'yyyy-MM-dd') : '',
+      capitalizeRole(m.role),
+      m.created_at ? format(new Date(m.created_at), 'yyyy-MM-dd') : '',
     ]);
     
     const csvContent = [headers, ...rows]
@@ -118,6 +123,7 @@ export function TeamDetails({ team, open, onClose }: TeamDetailsProps) {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
+                    <TableHead>Date Added</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -127,11 +133,12 @@ export function TeamDetails({ team, open, onClose }: TeamDetailsProps) {
                         <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       </TableRow>
                     ))
                   ) : members?.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                         <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
                         No members synced yet
                       </TableCell>
@@ -143,8 +150,11 @@ export function TeamDetails({ team, open, onClose }: TeamDetailsProps) {
                         <TableCell>{member.email}</TableCell>
                         <TableCell>
                           <Badge variant={member.role === 'owner' ? 'default' : 'secondary'}>
-                            {member.role}
+                            {capitalizeRole(member.role)}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {member.created_at ? format(new Date(member.created_at), 'MMM d, yyyy') : '—'}
                         </TableCell>
                       </TableRow>
                     ))
