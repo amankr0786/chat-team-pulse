@@ -10,6 +10,11 @@ function setStatus(message, type = 'info') {
   statusEl.className = `status ${type}`;
 }
 
+function capitalizeRole(role) {
+  if (!role) return 'Member';
+  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+}
+
 function showMembers(members) {
   if (members.length === 0) {
     membersPreview.style.display = 'none';
@@ -19,7 +24,7 @@ function showMembers(members) {
   membersPreview.innerHTML = members.map(m => `
     <div class="member-item">
       <span class="member-name">${m.name || 'Unknown'}</span>
-      <span class="member-role">${m.role}</span>
+      <span class="member-role">${capitalizeRole(m.role)}</span>
       <div class="member-email">${m.email}</div>
     </div>
   `).join('');
@@ -37,11 +42,41 @@ async function scanPage() {
   const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: () => {
-      // Extract team name from page
-      const teamNameEl = document.querySelector('[class*="workspace-name"]') || 
-                         document.querySelector('h1') ||
-                         document.querySelector('[data-testid="workspace-name"]');
-      const pageTeamName = teamNameEl?.textContent?.trim() || '';
+      // Extract team/workspace name from page - try multiple selectors
+      let pageTeamName = '';
+      
+      // Method 1: Look for workspace name in navigation/header
+      const navItems = document.querySelectorAll('nav a, [role="navigation"] a, header a');
+      navItems.forEach(el => {
+        const text = el.textContent?.trim();
+        if (text && text.length > 2 && text.length < 50 && !text.includes('@') && 
+            !['Settings', 'Members', 'Billing', 'Home', 'Admin', 'Workspaces'].includes(text)) {
+          if (!pageTeamName) pageTeamName = text;
+        }
+      });
+      
+      // Method 2: Look for heading elements
+      if (!pageTeamName) {
+        const headings = document.querySelectorAll('h1, h2, [class*="title"], [class*="workspace"]');
+        headings.forEach(el => {
+          const text = el.textContent?.trim();
+          if (text && text.length > 2 && text.length < 50 && !text.includes('@') &&
+              !text.toLowerCase().includes('member') && !text.toLowerCase().includes('setting')) {
+            if (!pageTeamName) pageTeamName = text;
+          }
+        });
+      }
+      
+      // Method 3: Look in page title
+      if (!pageTeamName && document.title) {
+        const titleParts = document.title.split(/[|\-–—]/);
+        if (titleParts.length > 1) {
+          const potentialName = titleParts[0].trim();
+          if (potentialName.length > 2 && potentialName.length < 50) {
+            pageTeamName = potentialName;
+          }
+        }
+      }
       
       // Find all email elements on the page
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -58,28 +93,65 @@ async function scanPage() {
         const emailMatch = text.match(emailRegex);
         if (emailMatch) {
           const email = emailMatch[0];
-          // Try to extract name (usually before email or in a specific cell)
-          const cells = row.querySelectorAll('td, [role="cell"]');
+          const cells = row.querySelectorAll('td, [role="cell"], div');
           let name = '';
           let role = 'member';
           
+          // Look for name in cells - typically the first non-email text
           cells.forEach(cell => {
-            const cellText = cell.innerText.trim();
-            if (!cellText.includes('@') && cellText.length > 0 && cellText.length < 50 && !name) {
-              name = cellText;
+            const cellText = cell.innerText?.trim();
+            if (!cellText) return;
+            
+            // Skip if it contains email
+            if (cellText.includes('@')) return;
+            
+            // Check for role indicators
+            const lowerText = cellText.toLowerCase();
+            if (lowerText === 'owner' || lowerText.includes('owner')) {
+              role = 'owner';
+            } else if (lowerText === 'admin' || lowerText.includes('admin')) {
+              role = 'admin';
             }
-            if (cellText.toLowerCase().includes('owner') || cellText.toLowerCase().includes('admin')) {
-              role = cellText.toLowerCase().includes('owner') ? 'owner' : 'admin';
+            
+            // Look for name - usually a cell with just a name (2-50 chars, no special keywords)
+            if (!name && cellText.length >= 2 && cellText.length <= 50) {
+              // Skip common non-name values
+              const skipWords = ['owner', 'admin', 'member', 'pending', 'active', 'invited', 'edit', 'remove', 'delete'];
+              if (!skipWords.some(w => lowerText === w || lowerText.includes(w))) {
+                // Check if it looks like a name (contains letters, may have spaces)
+                if (/^[a-zA-Z\s\-'.]+$/.test(cellText) || /^[\p{L}\s\-'.]+$/u.test(cellText)) {
+                  name = cellText;
+                }
+              }
             }
           });
           
+          // If no name found, try to extract from avatar/initials or use email prefix
+          if (!name) {
+            const avatarEl = row.querySelector('[class*="avatar"], [class*="initial"]');
+            if (avatarEl) {
+              const avatarText = avatarEl.textContent?.trim();
+              if (avatarText && avatarText.length <= 3) {
+                // These are initials, expand them from email if possible
+                const emailParts = email.split('@')[0].split(/[._-]/);
+                name = emailParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+              }
+            }
+          }
+          
+          // Final fallback: derive name from email
+          if (!name) {
+            const emailPrefix = email.split('@')[0];
+            // Convert email prefix to name format (john.doe -> John Doe)
+            name = emailPrefix
+              .split(/[._-]/)
+              .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+              .join(' ');
+          }
+          
           // Check if this email is already added
           if (!members.find(m => m.email === email)) {
-            members.push({
-              email,
-              name: name || email.split('@')[0],
-              role
-            });
+            members.push({ email, name, role });
           }
         }
       });
@@ -87,30 +159,21 @@ async function scanPage() {
       // Method 2: If no rows found, use email list
       if (members.length === 0 && emails.length > 0) {
         emails.forEach(email => {
-          // Try to find surrounding text for name
-          const surrounding = pageText.split(email);
-          let name = '';
-          
-          // Look for initials or name before email
-          if (surrounding[0]) {
-            const words = surrounding[0].trim().split(/\s+/);
-            const lastWord = words[words.length - 1];
-            if (lastWord && lastWord.length <= 30 && !lastWord.includes('@')) {
-              name = lastWord;
-            }
-          }
-          
           // Determine role from surrounding text
+          const surrounding = pageText.split(email);
           let role = 'member';
           const context = (surrounding[0]?.slice(-100) || '') + email + (surrounding[1]?.slice(0, 100) || '');
           if (context.toLowerCase().includes('owner')) role = 'owner';
           else if (context.toLowerCase().includes('admin')) role = 'admin';
           
-          members.push({
-            email,
-            name: name || email.split('@')[0],
-            role
-          });
+          // Derive name from email
+          const emailPrefix = email.split('@')[0];
+          const name = emailPrefix
+            .split(/[._-]/)
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            .join(' ');
+          
+          members.push({ email, name, role });
         });
       }
       
@@ -158,12 +221,13 @@ syncBtn.addEventListener('click', async () => {
     
     showMembers(data.members);
     
-    // Use custom team name or detected name or default
-    const teamName = teamNameInput.value.trim() || 
-                     data.pageTeamName || 
-                     `ChatGPT Team ${new Date().toISOString().split('T')[0]}`;
+    // Use custom team name if provided, otherwise use detected name
+    const teamName = teamNameInput.value.trim() || data.pageTeamName || `Team ${new Date().toISOString().split('T')[0]}`;
     
-    teamNameInput.value = teamName;
+    // Update input with the team name being used
+    if (!teamNameInput.value.trim()) {
+      teamNameInput.value = teamName;
+    }
     
     setStatus(`Found ${data.members.length} members. Syncing...`, 'info');
     
@@ -181,11 +245,15 @@ syncBtn.addEventListener('click', async () => {
 
 // Auto-scan when popup opens
 scanPage().then(data => {
-  if (data?.members?.length > 0) {
-    showMembers(data.members);
+  if (data) {
+    // Always set team name if detected
     if (data.pageTeamName) {
       teamNameInput.value = data.pageTeamName;
     }
-    setStatus(`Found ${data.members.length} members. Click Sync to upload.`, 'info');
+    
+    if (data.members?.length > 0) {
+      showMembers(data.members);
+      setStatus(`Found ${data.members.length} members. Click Sync to upload.`, 'info');
+    }
   }
 }).catch(() => {});
