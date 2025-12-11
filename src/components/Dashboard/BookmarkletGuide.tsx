@@ -11,82 +11,109 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 export function BookmarkletGuide() {
   const [copied, setCopied] = useState(false);
 
+  const API_URL = `https://cpmtbnsujfdumwdmsdrc.supabase.co/functions/v1/sync-team`;
+
   const bookmarkletCode = `javascript:(function(){
-    const API_URL = '${SUPABASE_URL}/functions/v1/sync-team';
+    const API_URL = '${API_URL}';
+    
+    console.log('[TeamSync] Starting sync...');
+    console.log('[TeamSync] API URL:', API_URL);
     
     function getTeamData() {
-      /* Try to get team name from various places */
-      const teamName = document.querySelector('h1')?.textContent?.trim()
-        || document.querySelector('[class*="team"]')?.textContent?.trim()
-        || document.querySelector('header h1, header h2')?.textContent?.trim()
-        || document.title.split('-')[0]?.trim()
-        || 'ChatGPT Team';
+      /* Try to get team name from page title or heading */
+      let teamName = 'ChatGPT Team';
+      const titleMatch = document.title.match(/Admin|Members/i);
+      if (titleMatch) {
+        /* Extract workspace name from URL or page */
+        const urlMatch = location.pathname.match(/\\/admin/);
+        teamName = document.querySelector('h1')?.textContent?.trim() || 
+                   document.querySelector('[data-testid]')?.textContent?.trim() ||
+                   'ChatGPT Team ' + new Date().toISOString().slice(0,10);
+      }
       
       const members = [];
-      
-      /* Method 1: Look for email patterns in the page */
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;
+      
+      /* Scan all text for emails */
       const allText = document.body.innerText;
       const foundEmails = [...new Set(allText.match(emailRegex) || [])];
       
-      /* Method 2: Find rows/items containing emails */
-      const allElements = document.querySelectorAll('tr, [role="row"], [class*="member"], [class*="user"], [class*="row"], li, div[class*="item"]');
+      console.log('[TeamSync] Found emails:', foundEmails);
       
-      allElements.forEach(el => {
-        const text = el.innerText || el.textContent || '';
+      /* Try to find structured member data */
+      document.querySelectorAll('tr, [role="row"], div[class*="member"], div[class*="user"]').forEach(el => {
+        const text = el.innerText || '';
         const emailMatch = text.match(emailRegex);
-        if (emailMatch && emailMatch[0]) {
+        if (emailMatch) {
           const email = emailMatch[0];
-          /* Get name - usually the text before the email or in a specific element */
-          const lines = text.split('\\n').map(l => l.trim()).filter(l => l);
-          let name = lines[0] || '';
+          const lines = text.split('\\n').filter(l => l.trim());
+          let name = lines[0] || email.split('@')[0];
           if (name.includes('@')) name = email.split('@')[0];
           
-          /* Try to find role */
-          const lowerText = text.toLowerCase();
           let role = 'member';
-          if (lowerText.includes('owner') || lowerText.includes('admin')) role = 'owner';
-          else if (lowerText.includes('admin')) role = 'admin';
+          if (text.toLowerCase().includes('owner')) role = 'owner';
+          else if (text.toLowerCase().includes('admin')) role = 'admin';
           
           if (!members.find(m => m.email === email)) {
-            members.push({ name: name.substring(0, 100), email, role });
+            members.push({ name: name.substring(0,100), email, role });
           }
         }
       });
       
-      /* Fallback: if no members found via elements, use found emails */
-      if (members.length === 0 && foundEmails.length > 0) {
+      /* Fallback to raw emails */
+      if (members.length === 0) {
         foundEmails.forEach(email => {
-          members.push({ name: email.split('@')[0], email, role: 'member' });
+          if (!members.find(m => m.email === email)) {
+            members.push({ name: email.split('@')[0], email, role: 'member' });
+          }
         });
       }
       
+      console.log('[TeamSync] Parsed members:', members);
       return { teamName, members };
     }
     
     const data = getTeamData();
     
     if (data.members.length === 0) {
-      /* Debug mode - show what we can see */
-      const debug = 'Page URL: ' + location.href + '\\n\\nVisible emails on page: ' + (document.body.innerText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || []).slice(0,5).join(', ');
-      alert('No members found.\\n\\n' + debug + '\\n\\nMake sure member emails are visible on the page.');
+      const emails = (document.body.innerText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || []).slice(0,5);
+      alert('No members found.\\n\\nEmails visible: ' + (emails.join(', ') || 'none') + '\\n\\nURL: ' + location.href);
       return;
     }
     
-    fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    })
-    .then(r => r.json())
-    .then(result => {
-      if (result.success) {
-        alert('✅ Synced ' + data.members.length + ' members from "' + data.teamName + '"');
-      } else {
-        alert('❌ Sync failed: ' + (result.error || 'Unknown error'));
-      }
-    })
-    .catch(err => alert('❌ Sync failed: ' + err.message));
+    console.log('[TeamSync] Sending to:', API_URL);
+    console.log('[TeamSync] Payload:', JSON.stringify(data));
+    
+    /* Use XMLHttpRequest as fallback for CSP issues */
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', API_URL, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          console.log('[TeamSync] Response status:', xhr.status);
+          console.log('[TeamSync] Response:', xhr.responseText);
+          if (xhr.status === 200) {
+            const result = JSON.parse(xhr.responseText);
+            if (result.success) {
+              alert('✅ Synced ' + data.members.length + ' members from "' + data.teamName + '"');
+            } else {
+              alert('❌ Sync failed: ' + (result.error || 'Unknown error'));
+            }
+          } else {
+            alert('❌ Sync failed (HTTP ' + xhr.status + '): ' + xhr.responseText);
+          }
+        }
+      };
+      xhr.onerror = function() {
+        console.error('[TeamSync] XHR Error');
+        alert('❌ Network error. The site may be blocking external requests.\\n\\nTry opening browser console (F12) for details.');
+      };
+      xhr.send(JSON.stringify(data));
+    } catch(e) {
+      console.error('[TeamSync] Error:', e);
+      alert('❌ Error: ' + e.message);
+    }
   })();`;
 
   const minifiedBookmarklet = bookmarkletCode.replace(/\s+/g, ' ').trim();
