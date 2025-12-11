@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Copy, Check, BookMarked, Zap, ClipboardPaste, Loader2 } from 'lucide-react';
+import { Copy, Check, BookMarked, Zap, ClipboardPaste, Loader2, Chrome, Download, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
@@ -169,101 +169,185 @@ export function BookmarkletGuide() {
         <div className="flex items-center gap-2">
           <BookMarked className="h-5 w-5 text-primary" />
           <CardTitle>Sync Teams</CardTitle>
-          <Badge variant="secondary">2-Step Process</Badge>
         </div>
         <CardDescription>
-          Copy team data from ChatGPT admin pages using the bookmarklet, then paste here
+          Choose your preferred method to sync team data from ChatGPT admin pages
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="step1">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="step1">1. Setup</TabsTrigger>
-            <TabsTrigger value="step2">2. Copy</TabsTrigger>
-            <TabsTrigger value="step3">3. Paste</TabsTrigger>
+        <Tabs defaultValue="extension">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="extension" className="gap-2">
+              <Chrome className="h-4 w-4" />
+              Extension
+              <Badge variant="secondary" className="text-xs">Recommended</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="gap-2">
+              <ClipboardPaste className="h-4 w-4" />
+              Manual
+            </TabsTrigger>
           </TabsList>
           
-          <TabsContent value="step1" className="space-y-4">
-            <div className="space-y-3 text-sm">
-              <div className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">1</span>
-                <p>Click the button below to copy the bookmarklet code</p>
+          {/* Browser Extension Method */}
+          <TabsContent value="extension" className="space-y-4 mt-4">
+            <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+              <h4 className="font-semibold flex items-center gap-2 mb-2">
+                <Chrome className="h-5 w-5" />
+                One-Click Sync with Browser Extension
+              </h4>
+              <p className="text-sm text-muted-foreground mb-4">
+                Install our Chrome extension for seamless syncing. Click once on any ChatGPT admin page to sync members.
+              </p>
+              
+              <div className="space-y-3 text-sm mb-4">
+                <div className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">1</span>
+                  <div>
+                    <p className="font-medium">Download the extension</p>
+                    <p className="text-muted-foreground text-xs">Export project to GitHub, then download the browser-extension folder</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">2</span>
+                  <div>
+                    <p className="font-medium">Load in Chrome</p>
+                    <p className="text-muted-foreground text-xs">Go to chrome://extensions → Enable Developer Mode → Load Unpacked</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">3</span>
+                  <div>
+                    <p className="font-medium">Use it!</p>
+                    <p className="text-muted-foreground text-xs">Navigate to ChatGPT admin page and click the extension icon</p>
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">2</span>
-                <p>Create a new bookmark in your browser (Ctrl/Cmd + D)</p>
-              </div>
-              <div className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">3</span>
-                <p>Edit the bookmark and paste the code as the URL</p>
+
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    window.open('https://github.com', '_blank');
+                    toast.info('Export your project to GitHub first, then download the browser-extension folder');
+                  }}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Get Extension Files
+                </Button>
+                <Button 
+                  variant="ghost"
+                  onClick={() => window.open('chrome://extensions', '_blank')}
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open Extensions
+                </Button>
               </div>
             </div>
-            
-            <Button onClick={copyBookmarklet} className="w-full" size="lg">
-              {copied ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy Bookmarklet Code
-                </>
-              )}
-            </Button>
+
+            <div className="p-3 bg-muted rounded-lg text-sm">
+              <strong>Why use the extension?</strong>
+              <ul className="mt-2 space-y-1 text-muted-foreground">
+                <li>✓ One-click sync directly to dashboard</li>
+                <li>✓ No copy-paste needed</li>
+                <li>✓ Auto-detects team name and members</li>
+                <li>✓ Works on all ChatGPT admin pages</li>
+              </ul>
+            </div>
           </TabsContent>
-          
-          <TabsContent value="step2" className="space-y-4">
-            <div className="space-y-3 text-sm">
-              <div className="flex gap-3">
-                <Zap className="h-5 w-5 text-warning shrink-0" />
-                <p>Go to your ChatGPT Team admin <strong>Members</strong> page</p>
-              </div>
-              <div className="flex gap-3">
-                <Zap className="h-5 w-5 text-warning shrink-0" />
-                <p>Click the bookmarklet in your browser toolbar</p>
-              </div>
-              <div className="flex gap-3">
-                <Zap className="h-5 w-5 text-warning shrink-0" />
-                <p>It will copy the member data to your clipboard</p>
-              </div>
-            </div>
-            
-            <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
-              <strong>Note:</strong> Make sure all members are visible on the page before clicking.
-            </div>
-          </TabsContent>
-          
-          <TabsContent value="step3" className="space-y-4">
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Paste the copied data below:</p>
-              <Textarea
-                placeholder='{"teamName": "...", "members": [...]}'
-                value={pastedData}
-                onChange={(e) => setPastedData(e.target.value)}
-                rows={6}
-                className="font-mono text-xs"
-              />
-              <Button 
-                onClick={handleImport} 
-                className="w-full" 
-                size="lg"
-                disabled={importing || !pastedData.trim()}
-              >
-                {importing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Importing...
-                  </>
-                ) : (
-                  <>
-                    <ClipboardPaste className="h-4 w-4 mr-2" />
-                    Import Team Data
-                  </>
-                )}
-              </Button>
-            </div>
+
+          {/* Manual Bookmarklet Method */}
+          <TabsContent value="manual" className="space-y-4 mt-4">
+            <Tabs defaultValue="step1">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="step1">1. Setup</TabsTrigger>
+                <TabsTrigger value="step2">2. Copy</TabsTrigger>
+                <TabsTrigger value="step3">3. Paste</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="step1" className="space-y-4">
+                <div className="space-y-3 text-sm">
+                  <div className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">1</span>
+                    <p>Click the button below to copy the bookmarklet code</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">2</span>
+                    <p>Create a new bookmark in your browser (Ctrl/Cmd + D)</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">3</span>
+                    <p>Edit the bookmark and paste the code as the URL</p>
+                  </div>
+                </div>
+                
+                <Button onClick={copyBookmarklet} className="w-full" size="lg">
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy Bookmarklet Code
+                    </>
+                  )}
+                </Button>
+              </TabsContent>
+              
+              <TabsContent value="step2" className="space-y-4">
+                <div className="space-y-3 text-sm">
+                  <div className="flex gap-3">
+                    <Zap className="h-5 w-5 text-warning shrink-0" />
+                    <p>Go to your ChatGPT Team admin <strong>Members</strong> page</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <Zap className="h-5 w-5 text-warning shrink-0" />
+                    <p>Click the bookmarklet in your browser toolbar</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <Zap className="h-5 w-5 text-warning shrink-0" />
+                    <p>It will copy the member data to your clipboard</p>
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
+                  <strong>Note:</strong> Make sure all members are visible on the page before clicking.
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="step3" className="space-y-4">
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">Paste the copied data below:</p>
+                  <Textarea
+                    placeholder='{"teamName": "...", "members": [...]}'
+                    value={pastedData}
+                    onChange={(e) => setPastedData(e.target.value)}
+                    rows={6}
+                    className="font-mono text-xs"
+                  />
+                  <Button 
+                    onClick={handleImport} 
+                    className="w-full" 
+                    size="lg"
+                    disabled={importing || !pastedData.trim()}
+                  >
+                    {importing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      <>
+                        <ClipboardPaste className="h-4 w-4 mr-2" />
+                        Import Team Data
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
         </Tabs>
       </CardContent>
