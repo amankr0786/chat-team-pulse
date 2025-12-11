@@ -1,1 +1,4 @@
 project_id = "cpmtbnsujfdumwdmsdrc"
+
+[functions.sync-team]
+verify_jwt = false
