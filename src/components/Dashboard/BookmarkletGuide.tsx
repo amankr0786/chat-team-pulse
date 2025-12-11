@@ -3,45 +3,41 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Copy, Check, BookMarked, Zap, ExternalLink } from 'lucide-react';
+import { Copy, Check, BookMarked, Zap, ClipboardPaste, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Textarea } from '@/components/ui/textarea';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+interface TeamMember {
+  name: string;
+  email: string;
+  role: string;
+}
+
+interface TeamData {
+  teamName: string;
+  members: TeamMember[];
+}
 
 export function BookmarkletGuide() {
   const [copied, setCopied] = useState(false);
+  const [pastedData, setPastedData] = useState('');
+  const [importing, setImporting] = useState(false);
+  const queryClient = useQueryClient();
 
-  const API_URL = `https://cpmtbnsujfdumwdmsdrc.supabase.co/functions/v1/sync-team`;
-
+  // Bookmarklet that copies data to clipboard (CSP-safe)
   const bookmarkletCode = `javascript:(function(){
-    const API_URL = '${API_URL}';
-    
-    console.log('[TeamSync] Starting sync...');
-    console.log('[TeamSync] API URL:', API_URL);
-    
     function getTeamData() {
-      /* Try to get team name from page title or heading */
       let teamName = 'ChatGPT Team';
-      const titleMatch = document.title.match(/Admin|Members/i);
-      if (titleMatch) {
-        /* Extract workspace name from URL or page */
-        const urlMatch = location.pathname.match(/\\/admin/);
-        teamName = document.querySelector('h1')?.textContent?.trim() || 
-                   document.querySelector('[data-testid]')?.textContent?.trim() ||
-                   'ChatGPT Team ' + new Date().toISOString().slice(0,10);
-      }
+      const h1 = document.querySelector('h1');
+      if (h1) teamName = h1.textContent.trim();
+      else teamName = document.title.split('-')[0].trim() || 'ChatGPT Team';
       
       const members = [];
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;
       
-      /* Scan all text for emails */
-      const allText = document.body.innerText;
-      const foundEmails = [...new Set(allText.match(emailRegex) || [])];
-      
-      console.log('[TeamSync] Found emails:', foundEmails);
-      
-      /* Try to find structured member data */
-      document.querySelectorAll('tr, [role="row"], div[class*="member"], div[class*="user"]').forEach(el => {
+      document.querySelectorAll('tr, [role="row"], div').forEach(el => {
         const text = el.innerText || '';
         const emailMatch = text.match(emailRegex);
         if (emailMatch) {
@@ -49,71 +45,30 @@ export function BookmarkletGuide() {
           const lines = text.split('\\n').filter(l => l.trim());
           let name = lines[0] || email.split('@')[0];
           if (name.includes('@')) name = email.split('@')[0];
-          
           let role = 'member';
           if (text.toLowerCase().includes('owner')) role = 'owner';
           else if (text.toLowerCase().includes('admin')) role = 'admin';
-          
           if (!members.find(m => m.email === email)) {
             members.push({ name: name.substring(0,100), email, role });
           }
         }
       });
       
-      /* Fallback to raw emails */
-      if (members.length === 0) {
-        foundEmails.forEach(email => {
-          if (!members.find(m => m.email === email)) {
-            members.push({ name: email.split('@')[0], email, role: 'member' });
-          }
-        });
-      }
-      
-      console.log('[TeamSync] Parsed members:', members);
       return { teamName, members };
     }
     
     const data = getTeamData();
-    
     if (data.members.length === 0) {
-      const emails = (document.body.innerText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || []).slice(0,5);
-      alert('No members found.\\n\\nEmails visible: ' + (emails.join(', ') || 'none') + '\\n\\nURL: ' + location.href);
+      alert('No members found on this page.');
       return;
     }
     
-    console.log('[TeamSync] Sending to:', API_URL);
-    console.log('[TeamSync] Payload:', JSON.stringify(data));
-    
-    /* Use XMLHttpRequest as fallback for CSP issues */
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', API_URL, true);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.onreadystatechange = function() {
-        if (xhr.readyState === 4) {
-          console.log('[TeamSync] Response status:', xhr.status);
-          console.log('[TeamSync] Response:', xhr.responseText);
-          if (xhr.status === 200) {
-            const result = JSON.parse(xhr.responseText);
-            if (result.success) {
-              alert('✅ Synced ' + data.members.length + ' members from "' + data.teamName + '"');
-            } else {
-              alert('❌ Sync failed: ' + (result.error || 'Unknown error'));
-            }
-          } else {
-            alert('❌ Sync failed (HTTP ' + xhr.status + '): ' + xhr.responseText);
-          }
-        }
-      };
-      xhr.onerror = function() {
-        console.error('[TeamSync] XHR Error');
-        alert('❌ Network error. The site may be blocking external requests.\\n\\nTry opening browser console (F12) for details.');
-      };
-      xhr.send(JSON.stringify(data));
-    } catch(e) {
-      console.error('[TeamSync] Error:', e);
-      alert('❌ Error: ' + e.message);
-    }
+    const json = JSON.stringify(data, null, 2);
+    navigator.clipboard.writeText(json).then(() => {
+      alert('✅ Copied ' + data.members.length + ' members!\\n\\nNow go to your dashboard and paste the data.');
+    }).catch(() => {
+      prompt('Copy this data manually:', json);
+    });
   })();`;
 
   const minifiedBookmarklet = bookmarkletCode.replace(/\s+/g, ' ').trim();
@@ -121,8 +76,91 @@ export function BookmarkletGuide() {
   const copyBookmarklet = () => {
     navigator.clipboard.writeText(minifiedBookmarklet);
     setCopied(true);
-    toast.success('Bookmarklet copied! Now create a bookmark and paste this as the URL.');
+    toast.success('Bookmarklet copied! Create a bookmark and paste this as the URL.');
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleImport = async () => {
+    if (!pastedData.trim()) {
+      toast.error('Please paste the copied data first');
+      return;
+    }
+
+    let data: TeamData;
+    try {
+      data = JSON.parse(pastedData);
+      if (!data.teamName || !Array.isArray(data.members)) {
+        throw new Error('Invalid format');
+      }
+    } catch {
+      toast.error('Invalid data format. Make sure you copied from the bookmarklet.');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      // Check if team exists
+      let { data: team } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('name', data.teamName)
+        .maybeSingle();
+
+      if (!team) {
+        // Create new team
+        const { data: newTeam, error: createError } = await supabase
+          .from('teams')
+          .insert({ name: data.teamName, member_count: data.members.length })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        team = newTeam;
+      }
+
+      // Delete existing members
+      await supabase.from('team_members').delete().eq('team_id', team.id);
+
+      // Insert new members
+      if (data.members.length > 0) {
+        const membersToInsert = data.members.map(m => ({
+          team_id: team.id,
+          email: m.email,
+          name: m.name || null,
+          role: m.role || 'member',
+        }));
+
+        const { error: insertError } = await supabase
+          .from('team_members')
+          .insert(membersToInsert);
+
+        if (insertError) throw insertError;
+      }
+
+      // Update team
+      await supabase
+        .from('teams')
+        .update({
+          member_count: data.members.length,
+          last_synced_at: new Date().toISOString(),
+        })
+        .eq('id', team.id);
+
+      // Add to sync history
+      await supabase.from('sync_history').insert({
+        team_id: team.id,
+        member_count: data.members.length,
+      });
+
+      toast.success(`Synced ${data.members.length} members from "${data.teamName}"`);
+      setPastedData('');
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+    } catch (error) {
+      console.error('Import error:', error);
+      toast.error('Failed to import: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -130,21 +168,22 @@ export function BookmarkletGuide() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <BookMarked className="h-5 w-5 text-primary" />
-          <CardTitle>Sync Bookmarklet</CardTitle>
-          <Badge variant="secondary">Setup Required</Badge>
+          <CardTitle>Sync Teams</CardTitle>
+          <Badge variant="secondary">2-Step Process</Badge>
         </div>
         <CardDescription>
-          Use this bookmarklet to capture team data directly from ChatGPT admin pages
+          Copy team data from ChatGPT admin pages using the bookmarklet, then paste here
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="setup">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="setup">Setup</TabsTrigger>
-            <TabsTrigger value="usage">How to Use</TabsTrigger>
+        <Tabs defaultValue="step1">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="step1">1. Setup</TabsTrigger>
+            <TabsTrigger value="step2">2. Copy</TabsTrigger>
+            <TabsTrigger value="step3">3. Paste</TabsTrigger>
           </TabsList>
           
-          <TabsContent value="setup" className="space-y-4">
+          <TabsContent value="step1" className="space-y-4">
             <div className="space-y-3 text-sm">
               <div className="flex gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">1</span>
@@ -157,10 +196,6 @@ export function BookmarkletGuide() {
               <div className="flex gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">3</span>
                 <p>Edit the bookmark and paste the code as the URL</p>
-              </div>
-              <div className="flex gap-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">4</span>
-                <p>Name it something like "Sync ChatGPT Team"</p>
               </div>
             </div>
             
@@ -179,28 +214,55 @@ export function BookmarkletGuide() {
             </Button>
           </TabsContent>
           
-          <TabsContent value="usage" className="space-y-4">
+          <TabsContent value="step2" className="space-y-4">
             <div className="space-y-3 text-sm">
               <div className="flex gap-3">
                 <Zap className="h-5 w-5 text-warning shrink-0" />
-                <p>Go to your ChatGPT Team admin page and navigate to the <strong>Members</strong> section</p>
+                <p>Go to your ChatGPT Team admin <strong>Members</strong> page</p>
               </div>
               <div className="flex gap-3">
                 <Zap className="h-5 w-5 text-warning shrink-0" />
-                <p>Click the "Sync ChatGPT Team" bookmark in your toolbar</p>
+                <p>Click the bookmarklet in your browser toolbar</p>
               </div>
               <div className="flex gap-3">
                 <Zap className="h-5 w-5 text-warning shrink-0" />
-                <p>The bookmarklet will capture member data and sync it to this dashboard</p>
-              </div>
-              <div className="flex gap-3">
-                <Zap className="h-5 w-5 text-warning shrink-0" />
-                <p>Repeat for each of your ChatGPT Team workspaces</p>
+                <p>It will copy the member data to your clipboard</p>
               </div>
             </div>
             
             <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
-              <strong>Tip:</strong> The bookmarklet reads the visible member table on the page. Make sure all members are visible (scroll or expand the list if needed).
+              <strong>Note:</strong> Make sure all members are visible on the page before clicking.
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="step3" className="space-y-4">
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Paste the copied data below:</p>
+              <Textarea
+                placeholder='{"teamName": "...", "members": [...]}'
+                value={pastedData}
+                onChange={(e) => setPastedData(e.target.value)}
+                rows={6}
+                className="font-mono text-xs"
+              />
+              <Button 
+                onClick={handleImport} 
+                className="w-full" 
+                size="lg"
+                disabled={importing || !pastedData.trim()}
+              >
+                {importing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <ClipboardPaste className="h-4 w-4 mr-2" />
+                    Import Team Data
+                  </>
+                )}
+              </Button>
             </div>
           </TabsContent>
         </Tabs>
