@@ -5,6 +5,7 @@ import { TeamCard } from '@/components/Dashboard/TeamCard';
 import { TeamDetails } from '@/components/Dashboard/TeamDetails';
 import { BookmarkletGuide } from '@/components/Dashboard/BookmarkletGuide';
 import { AddTeamDialog } from '@/components/Dashboard/AddTeamDialog';
+import { AutomationStatus } from '@/components/Dashboard/AutomationStatus';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Building2, Search, RefreshCw } from 'lucide-react';
@@ -71,6 +72,9 @@ export default function Index() {
       <main className="container mx-auto px-4 py-6 space-y-6">
         {/* Stats */}
         <StatsOverview teams={teams ?? []} />
+
+        {/* Automation Status */}
+        <AutomationStatus />
 
         {/* Bookmarklet Guide */}
         <BookmarkletGuide />
