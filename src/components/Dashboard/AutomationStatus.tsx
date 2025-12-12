@@ -1,12 +1,40 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useSchedulerStatus } from '@/hooks/useSchedulerStatus';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Clock, PlayCircle, CheckCircle2, XCircle, Timer, Server } from 'lucide-react';
+import { Clock, PlayCircle, CheckCircle2, XCircle, Timer, Server, Zap } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useState } from 'react';
 
 export function AutomationStatus() {
-  const { data: scheduler, isLoading } = useSchedulerStatus();
+  const { data: scheduler, isLoading, refetch } = useSchedulerStatus();
+  const [isTriggering, setIsTriggering] = useState(false);
+
+  const handleRunSyncNow = async () => {
+    setIsTriggering(true);
+    try {
+      const { error } = await supabase.functions.invoke('update-scheduler-status', {
+        body: {
+          status: 'pending',
+          trigger_manual: true,
+          next_run_at: new Date().toISOString(),
+        },
+      });
+      
+      if (error) throw error;
+      
+      toast.success('Sync triggered! The Windows Task Scheduler will pick this up on its next poll.');
+      refetch();
+    } catch (error) {
+      console.error('Failed to trigger sync:', error);
+      toast.error('Failed to trigger sync');
+    } finally {
+      setIsTriggering(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -74,10 +102,21 @@ export function AutomationStatus() {
   return (
     <Card className="border-primary/20">
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Server className="h-5 w-5 text-primary" />
-          Automation Status
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Server className="h-5 w-5 text-primary" />
+            Automation Status
+          </CardTitle>
+          <Button 
+            size="sm" 
+            className="gap-1.5"
+            onClick={handleRunSyncNow}
+            disabled={isTriggering || scheduler.status === 'running'}
+          >
+            <Zap className="h-4 w-4" />
+            Run Sync Now
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

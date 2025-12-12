@@ -79,6 +79,38 @@ export type Database = {
         }
         Relationships: []
       }
+      team_alerts: {
+        Row: {
+          acknowledged_at: string
+          alert_type: string
+          created_at: string
+          id: string
+          team_id: string
+        }
+        Insert: {
+          acknowledged_at?: string
+          alert_type?: string
+          created_at?: string
+          id?: string
+          team_id: string
+        }
+        Update: {
+          acknowledged_at?: string
+          alert_type?: string
+          created_at?: string
+          id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_alerts_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_members: {
         Row: {
           created_at: string
