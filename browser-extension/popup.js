@@ -4,6 +4,27 @@ const statusEl = document.getElementById('status');
 const syncBtn = document.getElementById('syncBtn');
 const teamNameInput = document.getElementById('teamName');
 const membersPreview = document.getElementById('membersPreview');
+const autoSyncToggle = document.getElementById('autoSyncToggle');
+const autoCloseToggle = document.getElementById('autoCloseToggle');
+
+// Load saved settings
+chrome.storage.local.get(['autoSync', 'autoClose'], (result) => {
+  if (autoSyncToggle) autoSyncToggle.checked = result.autoSync || false;
+  if (autoCloseToggle) autoCloseToggle.checked = result.autoClose || false;
+});
+
+// Save settings when changed
+if (autoSyncToggle) {
+  autoSyncToggle.addEventListener('change', () => {
+    chrome.storage.local.set({ autoSync: autoSyncToggle.checked });
+  });
+}
+
+if (autoCloseToggle) {
+  autoCloseToggle.addEventListener('change', () => {
+    chrome.storage.local.set({ autoClose: autoCloseToggle.checked });
+  });
+}
 
 function setStatus(message, type = 'info') {
   statusEl.textContent = message;
@@ -29,6 +50,16 @@ function showMembers(members) {
     </div>
   `).join('');
   membersPreview.style.display = 'block';
+}
+
+function updateBadge(success) {
+  chrome.action.setBadgeText({ text: success ? '✓' : '!' });
+  chrome.action.setBadgeBackgroundColor({ color: success ? '#22c55e' : '#ef4444' });
+  
+  // Clear badge after 5 seconds
+  setTimeout(() => {
+    chrome.action.setBadgeText({ text: '' });
+  }, 5000);
 }
 
 async function scanPage() {
@@ -201,31 +232,33 @@ async function syncToServer(teamName, members) {
   return response.json();
 }
 
-syncBtn.addEventListener('click', async () => {
-  syncBtn.disabled = true;
+async function performSync(autoTriggered = false) {
+  if (syncBtn) syncBtn.disabled = true;
   setStatus('Scanning page...', 'info');
   
   try {
     const data = await scanPage();
     
     if (!data) {
-      syncBtn.disabled = false;
-      return;
+      if (syncBtn) syncBtn.disabled = false;
+      updateBadge(false);
+      return false;
     }
     
     if (data.members.length === 0) {
       setStatus('No members found. Make sure you are on the Members page.', 'error');
-      syncBtn.disabled = false;
-      return;
+      if (syncBtn) syncBtn.disabled = false;
+      updateBadge(false);
+      return false;
     }
     
     showMembers(data.members);
     
     // Use custom team name if provided, otherwise use detected name
-    const teamName = teamNameInput.value.trim() || data.pageTeamName || `Team ${new Date().toISOString().split('T')[0]}`;
+    const teamName = (teamNameInput?.value?.trim()) || data.pageTeamName || `Team ${new Date().toISOString().split('T')[0]}`;
     
     // Update input with the team name being used
-    if (!teamNameInput.value.trim()) {
+    if (teamNameInput && !teamNameInput.value?.trim()) {
       teamNameInput.value = teamName;
     }
     
@@ -234,26 +267,55 @@ syncBtn.addEventListener('click', async () => {
     const result = await syncToServer(teamName, data.members);
     
     setStatus(`✓ Synced ${data.members.length} members to "${teamName}"`, 'success');
+    updateBadge(true);
+    
+    // Check if auto-close is enabled
+    const settings = await chrome.storage.local.get(['autoClose']);
+    if (autoTriggered && settings.autoClose) {
+      setTimeout(async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          chrome.tabs.remove(tab.id);
+        }
+      }, 2000); // Wait 2 seconds before closing
+    }
+    
+    return true;
     
   } catch (error) {
     console.error('Sync error:', error);
     setStatus(`Error: ${error.message}`, 'error');
+    updateBadge(false);
+    return false;
+  } finally {
+    if (syncBtn) syncBtn.disabled = false;
   }
-  
-  syncBtn.disabled = false;
-});
+}
+
+// Manual sync button click
+if (syncBtn) {
+  syncBtn.addEventListener('click', () => performSync(false));
+}
 
 // Auto-scan when popup opens
 scanPage().then(data => {
   if (data) {
     // Always set team name if detected
-    if (data.pageTeamName) {
+    if (data.pageTeamName && teamNameInput) {
       teamNameInput.value = data.pageTeamName;
     }
     
     if (data.members?.length > 0) {
       showMembers(data.members);
       setStatus(`Found ${data.members.length} members. Click Sync to upload.`, 'info');
+      
+      // Check if auto-sync is enabled
+      chrome.storage.local.get(['autoSync'], async (result) => {
+        if (result.autoSync) {
+          setStatus('Auto-sync enabled. Syncing...', 'info');
+          await performSync(true);
+        }
+      });
     }
   }
 }).catch(() => {});

@@ -43,6 +43,42 @@ export type Database = {
           },
         ]
       }
+      sync_scheduler: {
+        Row: {
+          created_at: string
+          id: string
+          last_run_at: string | null
+          next_run_at: string | null
+          profiles_synced: number | null
+          run_duration_seconds: number | null
+          status: string
+          total_profiles: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_run_at?: string | null
+          next_run_at?: string | null
+          profiles_synced?: number | null
+          run_duration_seconds?: number | null
+          status?: string
+          total_profiles?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_run_at?: string | null
+          next_run_at?: string | null
+          profiles_synced?: number | null
+          run_duration_seconds?: number | null
+          status?: string
+          total_profiles?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       team_members: {
         Row: {
           created_at: string
