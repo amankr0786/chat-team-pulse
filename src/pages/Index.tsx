@@ -6,6 +6,7 @@ import { TeamDetails } from '@/components/Dashboard/TeamDetails';
 import { BookmarkletGuide } from '@/components/Dashboard/BookmarkletGuide';
 import { AddTeamDialog } from '@/components/Dashboard/AddTeamDialog';
 import { AutomationStatus } from '@/components/Dashboard/AutomationStatus';
+import { TeamMemberAlerts } from '@/components/Dashboard/TeamMemberAlerts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Building2, Search, RefreshCw } from 'lucide-react';
@@ -70,6 +71,14 @@ export default function Index() {
       </header>
 
       <main className="container mx-auto px-4 py-6 space-y-6">
+        {/* Team Member Alerts */}
+        <TeamMemberAlerts 
+          teams={teams ?? []} 
+          onSyncTeam={(team) => {
+            toast.info(`Open the browser extension on ${team.name}'s admin page to sync.`);
+          }}
+        />
+
         {/* Stats */}
         <StatsOverview teams={teams ?? []} />
 
