@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useEffect } from "react";
 
 export interface Team {
   id: string;
@@ -35,58 +35,58 @@ export function useTeams() {
 
   // Set up real-time subscription for teams table
   useEffect(() => {
-    console.log('[Realtime] Setting up teams subscription...');
-    
+    console.log("[Realtime] Setting up teams subscription...");
+
     const channel = supabase
-      .channel('teams-realtime')
+      .channel("teams-realtime")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'teams'
+          event: "*",
+          schema: "public",
+          table: "teams",
         },
         (payload) => {
-          console.log('[Realtime] Teams change detected:', payload);
-          queryClient.invalidateQueries({ queryKey: ['teams'] });
-        }
+          console.log("[Realtime] Teams change detected:", payload);
+          queryClient.invalidateQueries({ queryKey: ["teams"] });
+        },
       )
       .subscribe((status) => {
-        console.log('[Realtime] Teams subscription status:', status);
+        console.log("[Realtime] Teams subscription status:", status);
       });
 
     return () => {
-      console.log('[Realtime] Cleaning up teams subscription');
+      console.log("[Realtime] Cleaning up teams subscription");
       supabase.removeChannel(channel);
     };
   }, [queryClient]);
 
   return useQuery({
-    queryKey: ['teams'],
+    queryKey: ["teams"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('teams')
-        .select('*')
-        .order('name');
-      
+      const { data, error } = await supabase.from("teams").select("*").order("updated_at", { ascending: false });
+
       if (error) throw error;
-      return data as Team[];
+
+      const byName = new Map<string, Team>();
+      for (const t of data as Team[]) {
+        const key = (t.name || "").trim().toLowerCase();
+        if (!byName.has(key)) byName.set(key, t); // keep newest (because we ordered updated_at desc)
+      }
+
+      return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
     },
   });
 }
 
 export function useTeamMembers(teamId: string | null) {
   return useQuery({
-    queryKey: ['team-members', teamId],
+    queryKey: ["team-members", teamId],
     queryFn: async () => {
       if (!teamId) return [];
-      
-      const { data, error } = await supabase
-        .from('team_members')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('name');
-      
+
+      const { data, error } = await supabase.from("team_members").select("*").eq("team_id", teamId).order("name");
+
       if (error) throw error;
       return data as TeamMember[];
     },
@@ -96,17 +96,17 @@ export function useTeamMembers(teamId: string | null) {
 
 export function useSyncHistory(teamId: string | null) {
   return useQuery({
-    queryKey: ['sync-history', teamId],
+    queryKey: ["sync-history", teamId],
     queryFn: async () => {
       if (!teamId) return [];
-      
+
       const { data, error } = await supabase
-        .from('sync_history')
-        .select('*')
-        .eq('team_id', teamId)
-        .order('synced_at', { ascending: false })
+        .from("sync_history")
+        .select("*")
+        .eq("team_id", teamId)
+        .order("synced_at", { ascending: false })
         .limit(30);
-      
+
       if (error) throw error;
       return data as SyncHistory[];
     },
@@ -116,38 +116,31 @@ export function useSyncHistory(teamId: string | null) {
 
 export function useDeleteTeam() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (teamId: string) => {
-      const { error } = await supabase
-        .from('teams')
-        .delete()
-        .eq('id', teamId);
-      
+      const { error } = await supabase.from("teams").delete().eq("id", teamId);
+
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
     },
   });
 }
 
 export function useAddTeam() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (name: string) => {
-      const { data, error } = await supabase
-        .from('teams')
-        .insert({ name })
-        .select()
-        .single();
-      
+      const { data, error } = await supabase.from("teams").insert({ name }).select().single();
+
       if (error) throw error;
       return data as Team;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
     },
   });
 }
