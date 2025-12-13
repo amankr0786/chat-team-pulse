@@ -54,6 +54,8 @@ Write-Host "`nAll 10 profiles created! Each profile is now logged into a differe
 
 Create a configuration file with your team admin URLs:
 
+**IMPORTANT**: ChatGPT Team uses a single URL `https://chatgpt.com/admin/members` for all teams. Each Chrome profile is logged into a different team account, so the URL is the same but the team shown depends on which account is logged in.
+
 ```powershell
 # Save this as C:\ChatGPT-Sync\team-config.json
 {
@@ -61,12 +63,12 @@ Create a configuration file with your team admin URLs:
     {
       "profileNumber": 1,
       "teamName": "Team Alpha",
-      "adminUrl": "https://chatgpt.com/admin/org-xxx1/members"
+      "adminUrl": "https://chatgpt.com/admin/members"
     },
     {
       "profileNumber": 2,
       "teamName": "Team Beta",
-      "adminUrl": "https://chatgpt.com/admin/org-xxx2/members"
+      "adminUrl": "https://chatgpt.com/admin/members"
     }
     // Add more profiles as needed...
   ]
