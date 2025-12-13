@@ -2,16 +2,21 @@
 const SUPABASE_URL = 'https://cpmtbnsujfdumwdmsdrc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwbXRibnN1amZkdW13ZG1zZHJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NzY5MTUsImV4cCI6MjA4MTA1MjkxNX0.cScM225BLKI760VUscW4r5a_LuWjEffo95125eCd1Ss';
 
-// Pattern to match ChatGPT admin members page
-const ADMIN_MEMBERS_PATTERN = /^https:\/\/chatgpt\.com\/admin\/[^\/]+\/members/;
+// Pattern to match ChatGPT admin members page (https://chatgpt.com/admin/members)
+const ADMIN_MEMBERS_PATTERN = /^https:\/\/chatgpt\.com\/admin\/members/;
 
 // Track tabs that have been synced to avoid duplicate syncs
 const syncedTabs = new Set();
 
 console.log('[Background] Service worker initialized at', new Date().toISOString());
 
-// Listen for messages from popup
+// Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'triggerSync' && sender.tab) {
+    console.log('[Background] Received triggerSync from content script');
+    handleTabSync(sender.tab.id, sender.tab);
+    sendResponse({ status: 'ok' });
+  }
   if (message.type === 'ping') {
     console.log('[Background] Received ping from popup');
     sendResponse({ status: 'ok', timestamp: new Date().toISOString() });
@@ -24,9 +29,34 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   // Only proceed when the page has finished loading
   if (changeInfo.status !== 'complete') return;
   
-  // Check if we're on a ChatGPT admin members page
-  if (!tab.url || !ADMIN_MEMBERS_PATTERN.test(tab.url)) return;
+  console.log('[Background] Tab updated:', tab.url);
   
+  // Check if we're on a ChatGPT admin members page
+  if (!tab.url || !ADMIN_MEMBERS_PATTERN.test(tab.url)) {
+    console.log('[Background] URL does not match pattern');
+    return;
+  }
+  
+  await handleTabSync(tabId, tab);
+});
+
+// Also check on tab creation for direct navigation
+chrome.tabs.onCreated.addListener(async (tab) => {
+  console.log('[Background] Tab created:', tab.id);
+});
+
+// Check existing tabs on service worker startup
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('[Background] Runtime startup - checking existing tabs');
+  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/admin/members*' });
+  for (const tab of tabs) {
+    console.log('[Background] Found existing admin tab:', tab.url);
+    await handleTabSync(tab.id, tab);
+  }
+});
+
+// Main sync handler function
+async function handleTabSync(tabId, tab) {
   // Avoid duplicate syncs for the same tab
   const tabKey = `${tabId}-${tab.url}`;
   if (syncedTabs.has(tabKey)) {
@@ -98,14 +128,22 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       chrome.action.setBadgeText({ text: '✓' });
       chrome.action.setBadgeBackgroundColor({ color: '#22C55E' });
       
-      // Store last sync info
-      chrome.storage.local.set({
-        lastSync: {
-          teamName,
-          memberCount: members.length,
-          timestamp: new Date().toISOString(),
-          tabUrl: tab.url
-        }
+      // Store last sync info and log
+      const syncLog = {
+        teamName,
+        memberCount: members.length,
+        timestamp: new Date().toISOString(),
+        tabUrl: tab.url,
+        success: true
+      };
+      
+      chrome.storage.local.get(['syncLogs'], (result) => {
+        const logs = result.syncLogs || [];
+        logs.unshift(syncLog);
+        chrome.storage.local.set({
+          lastSync: syncLog,
+          syncLogs: logs.slice(0, 50) // Keep last 50 logs
+        });
       });
       
       // Clear badge after 5 seconds
@@ -121,16 +159,24 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     chrome.action.setBadgeText({ text: '!' });
     chrome.action.setBadgeBackgroundColor({ color: '#EF4444' });
     
-    // Store error info
-    chrome.storage.local.set({
-      lastError: {
-        message: error.message,
-        timestamp: new Date().toISOString(),
-        tabUrl: tab.url
-      }
+    // Store error info and log
+    const errorLog = {
+      message: error.message,
+      timestamp: new Date().toISOString(),
+      tabUrl: tab.url,
+      success: false
+    };
+    
+    chrome.storage.local.get(['syncLogs'], (result) => {
+      const logs = result.syncLogs || [];
+      logs.unshift(errorLog);
+      chrome.storage.local.set({
+        lastError: errorLog,
+        syncLogs: logs.slice(0, 50)
+      });
     });
   }
-});
+}
 
 // Clean up synced tabs when they're closed
 chrome.tabs.onRemoved.addListener((tabId) => {
