@@ -31,59 +31,42 @@ $ProfilesPath = "C:\ChatGPT-Sync\Profiles"
 # Verify extension files exist
 if (-not (Test-Path "$ExtensionPath\manifest.json")) {
     Write-Host "[ERROR] Extension not found at: $ExtensionPath" -ForegroundColor Red
-    Write-Host "Please copy the browser-extension files to this location first." -ForegroundColor Yellow
     exit 1
 }
 
-# Create base directories
 New-Item -ItemType Directory -Force -Path $ProfilesPath
 New-Item -ItemType Directory -Force -Path "C:\ChatGPT-Sync\logs"
 
-# Configure number of profiles
-$ProfileCount = 2  # Change this to the number of profiles you need
+$ProfileCount = 2
 
 for ($i = 1; $i -le $ProfileCount; $i++) {
     $ProfileDir = "$ProfilesPath\Profile$i"
-    
-    # Create profile directory
     New-Item -ItemType Directory -Force -Path $ProfileDir
     
     Write-Host "`n=== Setting up Profile$i ===" -ForegroundColor Cyan
     
-    # Launch Chrome with profile and extension
-    # Extension is loaded via --load-extension flag
-    $chrome = Start-Process "chrome.exe" -ArgumentList `
-        "--user-data-dir=`"$ProfileDir`"",
-        "--load-extension=`"$ExtensionPath`"",
-        "--no-first-run",
-        "--disable-default-apps",
-        "--disable-sync",
-        "chrome://extensions" `
-        -PassThru
+    # STEP 1: Open Chrome WITHOUT extension first to enable Developer mode
+    Write-Host "Opening Chrome to enable Developer mode..." -ForegroundColor Yellow
+    Start-Process "chrome.exe" -ArgumentList "--user-data-dir=`"$ProfileDir`"", "--no-first-run", "chrome://extensions"
     
-    Write-Host "Chrome opened for Profile$i" -ForegroundColor Green
     Write-Host ""
-    Write-Host "VERIFY THESE STEPS:" -ForegroundColor Yellow
-    Write-Host "  1. Check chrome://extensions shows 'ChatGPT Team Sync' extension" -ForegroundColor White
-    Write-Host "  2. Enable 'Developer mode' toggle (top right)" -ForegroundColor White
-    Write-Host "  3. Navigate to https://chatgpt.com and login with Team $i account" -ForegroundColor White
+    Write-Host "IN CHROME:" -ForegroundColor Yellow
+    Write-Host "  1. Enable 'Developer mode' toggle (top right corner)" -ForegroundColor White
+    Write-Host "  2. Click 'Load unpacked' button" -ForegroundColor White
+    Write-Host "  3. Select folder: $ExtensionPath" -ForegroundColor White
+    Write-Host "  4. Verify 'ChatGPT Team Sync' appears in extensions list" -ForegroundColor White
+    Write-Host "  5. Go to https://chatgpt.com and login with Team $i account" -ForegroundColor White
     Write-Host ""
-    Write-Host "Press any key AFTER you've verified extension AND logged in..."
+    Write-Host "Press any key AFTER completing all steps..."
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     
-    # Close Chrome
     Stop-Process -Name "chrome" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 5
     
     Write-Host "Profile$i setup complete!" -ForegroundColor Green
 }
 
-Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "All $ProfileCount profiles created!" -ForegroundColor Green
-Write-Host ""
-Write-Host "IMPORTANT: The extension loads via --load-extension flag each time."
-Write-Host "This is correct behavior - sync-teams.ps1 uses this flag automatically."
-Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "`nAll $ProfileCount profiles created with extension installed!" -ForegroundColor Green
 ```
 
 ## Step 2: Configure Team URLs
