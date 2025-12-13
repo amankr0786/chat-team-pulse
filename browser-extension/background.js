@@ -2,8 +2,8 @@
 const SUPABASE_URL = 'https://cpmtbnsujfdumwdmsdrc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwbXRibnN1amZkdW13ZG1zZHJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NzY5MTUsImV4cCI6MjA4MTA1MjkxNX0.cScM225BLKI760VUscW4r5a_LuWjEffo95125eCd1Ss';
 
-// Pattern to match ChatGPT admin members page
-const ADMIN_MEMBERS_PATTERN = /^https:\/\/chatgpt\.com\/admin\/members/;
+// Pattern to match ChatGPT admin members page (both /admin/members and /admin/*/members)
+const ADMIN_MEMBERS_PATTERN = /^https:\/\/chatgpt\.com\/admin\/(members|[^\/]+\/members)/;
 
 // Track tabs that have been synced to avoid duplicate syncs
 const syncedTabs = new Set();
@@ -69,20 +69,25 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // Check existing tabs on service worker startup
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[Background] Runtime startup - checking existing tabs');
-  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/admin/members*' });
-  console.log('[Background] Found', tabs.length, 'existing admin tabs');
+  const tabs = await chrome.tabs.query({});
+  console.log('[Background] Checking', tabs.length, 'tabs for admin pages');
   for (const tab of tabs) {
-    console.log('[Background] Processing existing tab:', tab.url);
-    await handleTabSync(tab.id, tab);
+    if (tab.url && ADMIN_MEMBERS_PATTERN.test(tab.url)) {
+      console.log('[Background] Found admin tab:', tab.url);
+      await handleTabSync(tab.id, tab);
+    }
   }
 });
 
 // Also check on install/update
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('[Background] Extension installed/updated:', details.reason);
-  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/admin/members*' });
+  const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
-    await handleTabSync(tab.id, tab);
+    if (tab.url && ADMIN_MEMBERS_PATTERN.test(tab.url)) {
+      console.log('[Background] Found admin tab on install:', tab.url);
+      await handleTabSync(tab.id, tab);
+    }
   }
 });
 
