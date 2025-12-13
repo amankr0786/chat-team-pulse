@@ -93,10 +93,7 @@ export default function Index() {
         {/* Automation Status */}
         <AutomationStatus />
 
-        {/* Bookmarklet Guide */}
-        <BookmarkletGuide />
-
-        {/* Teams Section */}
+        {/* Teams Section - NOW BEFORE GUIDE */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Your Teams</h2>
@@ -140,6 +137,9 @@ export default function Index() {
             </div>
           )}
         </div>
+
+        {/* Bookmarklet Guide - Moved to bottom */}
+        <BookmarkletGuide />
       </main>
 
       {/* Team Details Sheet */}
