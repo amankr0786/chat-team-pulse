@@ -65,10 +65,12 @@ async function handleTabSync(tabId, tab) {
   }
   
   console.log('[Background] Detected admin members page:', tab.url);
+  console.log('[Background] URL pattern test:', ADMIN_MEMBERS_PATTERN.test(tab.url));
   syncedTabs.add(tabKey);
   
-  // Wait a bit for the page to fully render
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  // Wait longer for the page to fully render and load dynamic content
+  console.log('[Background] Waiting 5 seconds for page to load...');
+  await new Promise(resolve => setTimeout(resolve, 5000));
   
   try {
     // Update badge to show syncing
