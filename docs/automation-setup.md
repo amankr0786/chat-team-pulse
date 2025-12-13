@@ -75,31 +75,49 @@ Create a configuration file with your team admin URLs:
 
 ## Step 3: Main Sync Script
 
-This is the main automation script that runs daily:
+Create the main sync script (`sync-teams.ps1`):
 
 ```powershell
 # sync-teams.ps1
+# IMPORTANT: Use at least 2-3 minutes wait time for reliable syncs
 param(
-    [int]$WaitMinutesMin = 5,
-    [int]$WaitMinutesMax = 8
+    [int]$WaitMinutesMin = 2,  # Minimum 2 minutes recommended
+    [int]$WaitMinutesMax = 3   # Maximum 3 minutes recommended
 )
 
-$ProfilesPath = "C:\ChatGPT-Sync\Profiles"
-$ConfigPath = "C:\ChatGPT-Sync\team-config.json"
-$LogFile = "C:\ChatGPT-Sync\logs\sync-$(Get-Date -Format 'yyyy-MM-dd').txt"
-$ApiUrl = "https://cpmtbnsujfdumwdmsdrc.supabase.co/functions/v1/update-scheduler-status"
+$ProfilesPath   = "C:\ChatGPT-Sync\Profiles"
+$ConfigPath     = "C:\ChatGPT-Sync\team-config.json"
+$ExtensionPath  = "C:\ChatGPT-Sync\browser-extension"
+$LogFile        = "C:\ChatGPT-Sync\logs\sync-$(Get-Date -Format 'yyyy-MM-dd').txt"
+$ApiUrl         = "https://cpmtbnsujfdumwdmsdrc.supabase.co/functions/v1/update-scheduler-status"
 
 function Log($message) {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     "$timestamp - $message" | Tee-Object -Append -FilePath $LogFile
 }
 
+# Find Chrome path
+$ChromePath = (Get-Command chrome.exe -ErrorAction SilentlyContinue).Source
+if (-not $ChromePath) {
+    $c1 = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
+    $c2 = "$env:ProgramFiles(x86)\Google\Chrome\Application\chrome.exe"
+    if (Test-Path $c1) { $ChromePath = $c1 }
+    elseif (Test-Path $c2) { $ChromePath = $c2 }
+}
+if (-not $ChromePath) { throw "Chrome not found. Install Google Chrome first." }
+
+# Validate required paths
+if (-not (Test-Path $ConfigPath)) { throw "Missing config: $ConfigPath" }
+if (-not (Test-Path "$ExtensionPath\manifest.json")) { throw "Missing extension manifest.json in: $ExtensionPath" }
+
 # Load configuration
-$config = Get-Content $ConfigPath | ConvertFrom-Json
+$config = (Get-Content $ConfigPath -Raw) | ConvertFrom-Json
 
 $StartTime = Get-Date
 Log "========================================="
 Log "Starting sync cycle"
+Log "Wait time: $WaitMinutesMin - $WaitMinutesMax minutes per profile"
+Log "Total profiles in config: $($config.profiles.Count)"
 Log "========================================="
 
 # Notify dashboard that sync started
@@ -109,7 +127,7 @@ try {
         profiles_synced = 0
         total_profiles = $config.profiles.Count
     } | ConvertTo-Json
-    
+
     Invoke-RestMethod -Uri $ApiUrl -Method POST -Body $body -ContentType "application/json"
     Log "Dashboard notified: sync started"
 } catch {
@@ -122,59 +140,94 @@ $FailedProfiles = @()
 foreach ($profile in $config.profiles) {
     $ProfileNum = $profile.profileNumber
     $ProfileDir = "$ProfilesPath\Profile$ProfileNum"
-    $TeamUrl = $profile.adminUrl
-    $TeamName = $profile.teamName
-    
+    $TeamUrl    = $profile.adminUrl
+    $TeamName   = $profile.teamName
+
     Log "----------------------------------------"
     Log "Processing Profile$ProfileNum ($TeamName)"
-    
+    Log "URL: $TeamUrl"
+
     if (-not (Test-Path $ProfileDir)) {
         Log "ERROR: Profile directory not found: $ProfileDir"
         $FailedProfiles += $ProfileNum
         continue
     }
-    
+
     try {
-        # Open Chrome with profile and navigate to team admin page
-        Log "Opening Chrome..."
-        $chromeProcess = Start-Process "chrome.exe" -ArgumentList `
-            "--user-data-dir=$ProfileDir",
+        # Kill any existing Chrome processes for this profile
+        Get-Process chrome -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -like "*$ProfileDir*"
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+        
+        Start-Sleep -Seconds 3
+        
+        Log "Opening Chrome with extension..."
+        $chromeProcess = Start-Process $ChromePath -ArgumentList `
+            "--user-data-dir=`"$ProfileDir`"",
             "--start-maximized",
             "--disable-sync",
-            $TeamUrl -PassThru
-        
-        # Wait random time between min and max minutes
+            "--no-first-run",
+            "--disable-default-apps",
+            "--disable-extensions-except=`"$ExtensionPath`"",
+            "--load-extension=`"$ExtensionPath`"",
+            "`"$TeamUrl`"" -PassThru
+
+        # Random wait between min and max minutes
         $WaitMinutes = Get-Random -Minimum $WaitMinutesMin -Maximum ($WaitMinutesMax + 1)
-        Log "Waiting $WaitMinutes minutes for auto-sync to complete..."
-        Start-Sleep -Seconds ($WaitMinutes * 60)
+        $WaitSeconds = $WaitMinutes * 60
+        Log "Waiting $WaitMinutes minute(s) ($WaitSeconds seconds) for extension to sync..."
         
-        # Close Chrome gracefully
-        Log "Closing Chrome..."
-        Stop-Process -Name "chrome" -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 5  # Wait for Chrome to fully close
+        # Wait with progress updates
+        $elapsed = 0
+        while ($elapsed -lt $WaitSeconds) {
+            Start-Sleep -Seconds 30
+            $elapsed += 30
+            $remaining = $WaitSeconds - $elapsed
+            if ($remaining -gt 0) {
+                Log "  ... $([math]::Round($remaining/60, 1)) minutes remaining"
+            }
+        }
+
+        Log "Closing Chrome for Profile$ProfileNum..."
         
+        # Try graceful close first
+        try {
+            $chromeProcess.CloseMainWindow() | Out-Null
+            Start-Sleep -Seconds 5
+        } catch {}
+        
+        # Force kill if still running
+        if (-not $chromeProcess.HasExited) {
+            Stop-Process -Id $chromeProcess.Id -Force -ErrorAction SilentlyContinue
+        }
+        
+        Start-Sleep -Seconds 5
+
         $ProfilesSynced++
-        Log "Profile$ProfileNum completed successfully"
-        
-        # Update dashboard with progress
+        Log "Profile$ProfileNum completed"
+
+        # Update dashboard progress
         try {
             $progressBody = @{
                 status = "running"
                 profiles_synced = $ProfilesSynced
                 total_profiles = $config.profiles.Count
             } | ConvertTo-Json
-            
+
             Invoke-RestMethod -Uri $ApiUrl -Method POST -Body $progressBody -ContentType "application/json"
         } catch {}
-        
+
     } catch {
         Log "ERROR processing Profile$ProfileNum - $_"
         $FailedProfiles += $ProfileNum
-        Stop-Process -Name "chrome" -Force -ErrorAction SilentlyContinue
+        try { 
+            Stop-Process -Id $chromeProcess.Id -Force -ErrorAction SilentlyContinue 
+        } catch {}
     }
-    
-    # Brief pause between profiles
-    Start-Sleep -Seconds 10
+
+    # Pause between profiles
+    Log "Pausing 15 seconds before next profile..."
+    Start-Sleep -Seconds 15
 }
 
 $EndTime = Get-Date
