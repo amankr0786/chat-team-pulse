@@ -2,82 +2,118 @@
 const SUPABASE_URL = 'https://cpmtbnsujfdumwdmsdrc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwbXRibnN1amZkdW13ZG1zZHJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NzY5MTUsImV4cCI6MjA4MTA1MjkxNX0.cScM225BLKI760VUscW4r5a_LuWjEffo95125eCd1Ss';
 
-// Pattern to match ChatGPT admin members page (https://chatgpt.com/admin/members)
+// Pattern to match ChatGPT admin members page
 const ADMIN_MEMBERS_PATTERN = /^https:\/\/chatgpt\.com\/admin\/members/;
 
 // Track tabs that have been synced to avoid duplicate syncs
 const syncedTabs = new Set();
 
-console.log('[Background] Service worker initialized at', new Date().toISOString());
+console.log('[Background] ========================================');
+console.log('[Background] Service worker initialized');
+console.log('[Background] Time:', new Date().toISOString());
+console.log('[Background] ========================================');
+
+// Keep service worker alive
+const keepAlive = () => {
+  console.log('[Background] Heartbeat:', new Date().toISOString());
+};
+setInterval(keepAlive, 25000);
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[Background] Received message:', message.type, 'from:', sender.tab?.url || 'popup');
+  
   if (message.type === 'triggerSync' && sender.tab) {
-    console.log('[Background] Received triggerSync from content script');
+    console.log('[Background] Processing triggerSync from content script');
     handleTabSync(sender.tab.id, sender.tab);
-    sendResponse({ status: 'ok' });
+    sendResponse({ status: 'ok', message: 'Sync started' });
   }
+  
   if (message.type === 'ping') {
-    console.log('[Background] Received ping from popup');
+    console.log('[Background] Responding to ping');
     sendResponse({ status: 'ok', timestamp: new Date().toISOString() });
   }
+  
+  if (message.type === 'wakeup') {
+    console.log('[Background] Wakeup received');
+    sendResponse({ status: 'awake', timestamp: new Date().toISOString() });
+  }
+  
   return true;
 });
 
 // Listen for tab updates
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  // Only proceed when the page has finished loading
   if (changeInfo.status !== 'complete') return;
+  if (!tab.url) return;
   
-  console.log('[Background] Tab updated:', tab.url);
+  console.log('[Background] Tab updated:', { tabId, url: tab.url, status: changeInfo.status });
   
   // Check if we're on a ChatGPT admin members page
-  if (!tab.url || !ADMIN_MEMBERS_PATTERN.test(tab.url)) {
-    console.log('[Background] URL does not match pattern');
-    return;
-  }
+  const isMatch = ADMIN_MEMBERS_PATTERN.test(tab.url);
+  console.log('[Background] URL match check:', { url: tab.url, pattern: ADMIN_MEMBERS_PATTERN.toString(), isMatch });
   
-  await handleTabSync(tabId, tab);
-});
-
-// Also check on tab creation for direct navigation
-chrome.tabs.onCreated.addListener(async (tab) => {
-  console.log('[Background] Tab created:', tab.id);
+  if (!isMatch) return;
+  
+  console.log('[Background] Admin page detected, waiting for content script to trigger sync...');
+  // The content script will trigger the sync via message, but also set a fallback
+  setTimeout(async () => {
+    const tabKey = `${tabId}-${tab.url}`;
+    if (!syncedTabs.has(tabKey)) {
+      console.log('[Background] Fallback: Content script did not trigger, initiating sync from background');
+      await handleTabSync(tabId, tab);
+    }
+  }, 20000); // 20 second fallback
 });
 
 // Check existing tabs on service worker startup
 chrome.runtime.onStartup.addListener(async () => {
   console.log('[Background] Runtime startup - checking existing tabs');
   const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/admin/members*' });
+  console.log('[Background] Found', tabs.length, 'existing admin tabs');
   for (const tab of tabs) {
-    console.log('[Background] Found existing admin tab:', tab.url);
+    console.log('[Background] Processing existing tab:', tab.url);
+    await handleTabSync(tab.id, tab);
+  }
+});
+
+// Also check on install/update
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log('[Background] Extension installed/updated:', details.reason);
+  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/admin/members*' });
+  for (const tab of tabs) {
     await handleTabSync(tab.id, tab);
   }
 });
 
 // Main sync handler function
 async function handleTabSync(tabId, tab) {
-  // Avoid duplicate syncs for the same tab
   const tabKey = `${tabId}-${tab.url}`;
+  
+  // Avoid duplicate syncs
   if (syncedTabs.has(tabKey)) {
     console.log('[Background] Tab already synced, skipping:', tabKey);
     return;
   }
   
-  console.log('[Background] Detected admin members page:', tab.url);
-  console.log('[Background] URL pattern test:', ADMIN_MEMBERS_PATTERN.test(tab.url));
+  console.log('[Background] ========================================');
+  console.log('[Background] Starting sync for tab:', tabId);
+  console.log('[Background] URL:', tab.url);
+  console.log('[Background] Time:', new Date().toISOString());
+  console.log('[Background] ========================================');
+  
   syncedTabs.add(tabKey);
   
-  // Wait longer for the page to fully render and load dynamic content
-  console.log('[Background] Waiting 5 seconds for page to load...');
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  // Wait for page to fully render
+  console.log('[Background] Waiting 8 seconds for page to fully load...');
+  await new Promise(resolve => setTimeout(resolve, 8000));
   
   try {
     // Update badge to show syncing
     chrome.action.setBadgeText({ text: '...' });
     chrome.action.setBadgeBackgroundColor({ color: '#FFA500' });
     
-    console.log('[Background] Starting auto-sync for tab:', tabId);
+    console.log('[Background] Extracting team data...');
     
     // Extract team data from the page
     const results = await chrome.scripting.executeScript({
@@ -85,25 +121,32 @@ async function handleTabSync(tabId, tab) {
       func: extractTeamData
     });
     
+    console.log('[Background] Extraction results:', results);
+    
     if (!results || !results[0] || !results[0].result) {
-      throw new Error('Failed to extract team data from page');
+      throw new Error('Failed to extract team data - no results returned');
     }
     
     const { teamName, members } = results[0].result;
     
-    console.log('[Background] Extracted data:', { teamName, memberCount: members.length });
+    console.log('[Background] ----------------------------------------');
+    console.log('[Background] Team Name:', teamName);
+    console.log('[Background] Member Count:', members.length);
     console.log('[Background] Members:', JSON.stringify(members, null, 2));
+    console.log('[Background] ----------------------------------------');
     
     if (!teamName) {
-      throw new Error('Could not detect team name');
+      throw new Error('Could not detect team name from page');
     }
     
     if (members.length === 0) {
-      throw new Error('No members found on page');
+      throw new Error('No members found on page - page may not have loaded correctly');
     }
     
     // Send to Supabase edge function
-    console.log('[Background] Sending data to sync-team edge function...');
+    console.log('[Background] Calling sync-team edge function...');
+    console.log('[Background] URL:', `${SUPABASE_URL}/functions/v1/sync-team`);
+    console.log('[Background] Payload:', JSON.stringify({ teamName, members }));
     
     const response = await fetch(`${SUPABASE_URL}/functions/v1/sync-team`, {
       method: 'POST',
@@ -120,23 +163,32 @@ async function handleTabSync(tabId, tab) {
     console.log('[Background] Response body:', responseText);
     
     if (!response.ok) {
-      throw new Error(`Sync failed: ${response.status} - ${responseText}`);
+      throw new Error(`API error: ${response.status} - ${responseText}`);
     }
     
-    const data = JSON.parse(responseText);
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error(`Invalid JSON response: ${responseText}`);
+    }
     
     if (data.success) {
-      console.log('[Background] Sync successful!', data);
+      console.log('[Background] ✓ SYNC SUCCESSFUL!');
+      console.log('[Background] Team ID:', data.teamId);
+      console.log('[Background] Member count:', data.memberCount);
+      
       chrome.action.setBadgeText({ text: '✓' });
       chrome.action.setBadgeBackgroundColor({ color: '#22C55E' });
       
-      // Store last sync info and log
+      // Store sync log
       const syncLog = {
         teamName,
         memberCount: members.length,
         timestamp: new Date().toISOString(),
         tabUrl: tab.url,
-        success: true
+        success: true,
+        teamId: data.teamId
       };
       
       chrome.storage.local.get(['syncLogs'], (result) => {
@@ -144,26 +196,29 @@ async function handleTabSync(tabId, tab) {
         logs.unshift(syncLog);
         chrome.storage.local.set({
           lastSync: syncLog,
-          syncLogs: logs.slice(0, 50) // Keep last 50 logs
+          syncLogs: logs.slice(0, 50)
         });
       });
       
-      // Clear badge after 5 seconds
+      // Clear badge after 10 seconds
       setTimeout(() => {
         chrome.action.setBadgeText({ text: '' });
-      }, 5000);
+      }, 10000);
+      
     } else {
-      throw new Error(data.error || 'Unknown sync error');
+      throw new Error(data.error || 'Sync returned success: false');
     }
     
   } catch (error) {
-    console.error('[Background] Auto-sync error:', error);
+    console.error('[Background] ✗ SYNC FAILED:', error.message);
+    console.error('[Background] Full error:', error);
+    
     chrome.action.setBadgeText({ text: '!' });
     chrome.action.setBadgeBackgroundColor({ color: '#EF4444' });
     
-    // Store error info and log
+    // Store error log
     const errorLog = {
-      message: error.message,
+      error: error.message,
       timestamp: new Date().toISOString(),
       tabUrl: tab.url,
       success: false
@@ -177,12 +232,14 @@ async function handleTabSync(tabId, tab) {
         syncLogs: logs.slice(0, 50)
       });
     });
+    
+    // Remove from synced tabs to allow retry
+    syncedTabs.delete(tabKey);
   }
 }
 
-// Clean up synced tabs when they're closed
+// Clean up synced tabs when closed
 chrome.tabs.onRemoved.addListener((tabId) => {
-  // Remove all entries for this tab
   for (const key of syncedTabs) {
     if (key.startsWith(`${tabId}-`)) {
       syncedTabs.delete(key);
@@ -192,48 +249,61 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // Function to extract team data from the page (injected into the tab)
 function extractTeamData() {
-  console.log('[Content] Extracting team data from page...');
+  console.log('[Injected] ========================================');
+  console.log('[Injected] Starting data extraction');
+  console.log('[Injected] URL:', window.location.href);
+  console.log('[Injected] ========================================');
   
-  // Try to get team name from page title or heading
+  // Try to get team name from page
   let teamName = '';
   
-  // Method 1: Look for team name in the page heading
+  // Method 1: Look for team name in headings
   const headings = document.querySelectorAll('h1, h2, [class*="title"], [class*="heading"]');
+  console.log('[Injected] Found', headings.length, 'heading elements');
+  
   for (const heading of headings) {
     const text = heading.textContent?.trim();
     if (text && text.length > 0 && text.length < 100 && !text.toLowerCase().includes('member')) {
       teamName = text;
+      console.log('[Injected] Found team name in heading:', teamName);
       break;
     }
   }
   
-  // Method 2: Extract from URL if heading not found
+  // Method 2: Extract from URL
   if (!teamName) {
     const urlMatch = window.location.pathname.match(/\/admin\/([^\/]+)\//);
     if (urlMatch) {
       teamName = decodeURIComponent(urlMatch[1]).replace(/-/g, ' ');
+      console.log('[Injected] Found team name in URL:', teamName);
     }
   }
   
-  // Method 3: Look for workspace name in breadcrumbs or nav
+  // Method 3: Look for workspace name in breadcrumbs
   if (!teamName) {
     const breadcrumbs = document.querySelectorAll('[class*="breadcrumb"] a, nav a');
     for (const crumb of breadcrumbs) {
       const text = crumb.textContent?.trim();
       if (text && text.length > 0 && text.length < 50) {
         teamName = text;
+        console.log('[Injected] Found team name in breadcrumb:', teamName);
         break;
       }
     }
   }
   
-  console.log('[Content] Detected team name:', teamName);
+  // Method 4: Use a default if nothing found
+  if (!teamName) {
+    teamName = 'Unknown Team';
+    console.log('[Injected] Using default team name');
+  }
+  
+  console.log('[Injected] Final team name:', teamName);
   
   // Extract member information
   const members = [];
   
-  // Look for member rows in the page
-  // Try multiple selectors to find member elements
+  // Try multiple selectors
   const selectors = [
     'table tbody tr',
     '[class*="member"]',
@@ -247,20 +317,20 @@ function extractTeamData() {
     const elements = document.querySelectorAll(selector);
     if (elements.length > 0) {
       memberElements = Array.from(elements);
-      console.log('[Content] Found members using selector:', selector, 'Count:', elements.length);
+      console.log('[Injected] Found', elements.length, 'elements with selector:', selector);
       break;
     }
   }
   
-  // If no structured elements found, look for email patterns in the entire page
+  // Fallback: search for emails in entire page
   if (memberElements.length === 0) {
-    console.log('[Content] No structured member elements found, searching for emails in page text...');
+    console.log('[Injected] No structured elements, searching page text for emails...');
     const pageText = document.body.innerText;
     const emailRegex = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
     const emails = pageText.match(emailRegex) || [];
+    console.log('[Injected] Found', emails.length, 'emails in page text');
     
     for (const email of emails) {
-      // Skip common non-member emails
       if (email.includes('openai.com') || email.includes('chatgpt.com')) continue;
       
       const name = email.split('@')[0]
@@ -280,23 +350,18 @@ function extractTeamData() {
     for (const element of memberElements) {
       const text = element.textContent || '';
       
-      // Find email in the element
       const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
       if (!emailMatch) continue;
       
       const email = emailMatch[0].toLowerCase();
-      
-      // Skip header rows or non-member rows
       if (email.includes('openai.com') || email.includes('chatgpt.com')) continue;
       
-      // Try to extract name
       let name = '';
       const nameElement = element.querySelector('[class*="name"], [class*="user"] span, td:first-child');
       if (nameElement) {
         name = nameElement.textContent?.trim() || '';
       }
       
-      // If no name found, derive from email
       if (!name || name === email) {
         name = email.split('@')[0]
           .replace(/[._-]/g, ' ')
@@ -305,7 +370,6 @@ function extractTeamData() {
           .join(' ');
       }
       
-      // Try to extract role
       let role = 'Member';
       const roleMatch = text.match(/\b(owner|admin|member)\b/i);
       if (roleMatch) {
@@ -321,7 +385,12 @@ function extractTeamData() {
     index === self.findIndex(m => m.email === member.email)
   );
   
-  console.log('[Content] Extracted members:', uniqueMembers);
+  console.log('[Injected] ----------------------------------------');
+  console.log('[Injected] Extraction complete');
+  console.log('[Injected] Team:', teamName);
+  console.log('[Injected] Members:', uniqueMembers.length);
+  console.log('[Injected] Data:', JSON.stringify(uniqueMembers, null, 2));
+  console.log('[Injected] ----------------------------------------');
   
   return {
     teamName,
