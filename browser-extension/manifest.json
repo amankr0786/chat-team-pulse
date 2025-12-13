@@ -18,7 +18,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/admin/members*"],
+      "matches": [
+        "https://chatgpt.com/admin/members*",
+        "https://chatgpt.com/admin/*/members*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
