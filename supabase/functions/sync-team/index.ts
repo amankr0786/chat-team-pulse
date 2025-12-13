@@ -94,7 +94,8 @@ Deno.serve(async (req) => {
         team_id: team.id,
         email: m.email,
         name: m.name || null,
-        role: m.role || "member",
+        role: (m.role || "member").toLowerCase(),
+        joined_at: m.joined_at || null,
       }));
 
       const { error: insertError } = await supabase.from("team_members").insert(membersToInsert);
