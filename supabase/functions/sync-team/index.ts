@@ -17,19 +17,32 @@ interface SyncPayload {
 }
 
 Deno.serve(async (req) => {
+  console.log('=== SYNC-TEAM FUNCTION CALLED ===');
+  console.log('Request method:', req.method);
+  console.log('Request URL:', req.url);
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log('Handling CORS preflight request');
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    console.log('Supabase URL configured:', !!supabaseUrl);
+    console.log('Supabase Key configured:', !!supabaseKey);
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const payload: SyncPayload = await req.json();
-    console.log('Received sync request for team:', payload.teamName);
+    const rawBody = await req.text();
+    console.log('Raw request body:', rawBody);
+    
+    const payload: SyncPayload = JSON.parse(rawBody);
+    console.log('=== SYNC REQUEST DETAILS ===');
+    console.log('Team name:', payload.teamName);
     console.log('Members count:', payload.members.length);
+    console.log('Members data:', JSON.stringify(payload.members, null, 2));
 
     if (!payload.teamName || !payload.members || !Array.isArray(payload.members)) {
       return new Response(
@@ -123,19 +136,28 @@ Deno.serve(async (req) => {
       // Non-critical, don't throw
     }
 
-    console.log('Sync completed successfully for team:', team.name);
+    console.log('=== SYNC COMPLETED SUCCESSFULLY ===');
+    console.log('Team ID:', team.id);
+    console.log('Team name:', team.name);
+    console.log('Members synced:', payload.members.length);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         teamId: team.id,
-        memberCount: payload.members.length 
+        teamName: team.name,
+        memberCount: payload.members.length,
+        timestamp: new Date().toISOString()
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Sync error:', error);
+    console.error('=== SYNC ERROR ===');
+    console.error('Error type:', error?.constructor?.name);
+    console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
       JSON.stringify({ success: false, error: errorMessage }),
