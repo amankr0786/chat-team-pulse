@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTeams, useDeleteTeam, Team } from '@/hooks/useTeams';
 import { StatsOverview } from '@/components/Dashboard/StatsOverview';
 import { TeamCard } from '@/components/Dashboard/TeamCard';
@@ -29,6 +29,14 @@ export default function Index() {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [teamToDelete, setTeamToDelete] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetch();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   const filteredTeams = teams?.filter(team =>
     team.name.toLowerCase().includes(search.toLowerCase())
