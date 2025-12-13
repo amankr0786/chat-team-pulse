@@ -9,7 +9,7 @@
       padding: 0;
     }
     body {
-      width: 320px;
+      width: 360px;
       padding: 16px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0f172a;
@@ -70,6 +70,14 @@
       opacity: 0.6;
       cursor: not-allowed;
     }
+    button.secondary {
+      background: #334155;
+      color: #e2e8f0;
+      margin-top: 8px;
+    }
+    button.secondary:hover {
+      background: #475569;
+    }
     .team-name-input {
       width: 100%;
       padding: 10px 12px;
@@ -89,7 +97,7 @@
       border-radius: 8px;
       padding: 12px;
       margin-bottom: 12px;
-      max-height: 200px;
+      max-height: 150px;
       overflow-y: auto;
       font-size: 12px;
     }
@@ -121,10 +129,99 @@
       color: #3b82f6;
       text-decoration: none;
     }
+    
+    /* Debug Panel Styles */
+    .debug-panel {
+      margin-top: 16px;
+      border-top: 1px solid #334155;
+      padding-top: 12px;
+    }
+    .debug-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .debug-header h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+    .debug-toggle {
+      font-size: 11px;
+      color: #3b82f6;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      width: auto;
+    }
+    .debug-content {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 11px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .debug-section {
+      margin-bottom: 10px;
+    }
+    .debug-section:last-child {
+      margin-bottom: 0;
+    }
+    .debug-label {
+      color: #64748b;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .debug-value {
+      color: #e2e8f0;
+      word-break: break-all;
+    }
+    .debug-value.success {
+      color: #22c55e;
+    }
+    .debug-value.error {
+      color: #ef4444;
+    }
+    .debug-value.warning {
+      color: #f59e0b;
+    }
+    .debug-logs {
+      background: #0f172a;
+      border-radius: 4px;
+      padding: 8px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .debug-log-entry {
+      padding: 2px 0;
+      border-bottom: 1px solid #1e293b;
+    }
+    .debug-log-entry:last-child {
+      border-bottom: none;
+    }
+    .debug-log-time {
+      color: #64748b;
+    }
+    .debug-log-msg {
+      color: #e2e8f0;
+    }
+    .auto-sync-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      background: #22c55e;
+      color: white;
+      margin-left: 8px;
+    }
   </style>
 </head>
 <body>
-  <h1>ChatGPT Team Sync</h1>
+  <h1>ChatGPT Team Sync <span id="autoSyncBadge" class="auto-sync-badge" style="display: none;">AUTO</span></h1>
   
   <div id="status" class="status info">
     Navigate to ChatGPT Admin → Members page, then click Sync.
@@ -135,6 +232,33 @@
   <div id="membersPreview" class="members-preview" style="display: none;"></div>
   
   <button id="syncBtn" class="primary">🔍 Scan & Sync Members</button>
+  <button id="refreshBtn" class="secondary">🔄 Refresh Debug Info</button>
+  
+  <!-- Debug Panel -->
+  <div class="debug-panel">
+    <div class="debug-header">
+      <h3>🔧 Debug Panel</h3>
+      <button id="toggleDebug" class="debug-toggle">Hide</button>
+    </div>
+    <div id="debugContent" class="debug-content">
+      <div class="debug-section">
+        <div class="debug-label">Last Sync:</div>
+        <div id="debugLastSync" class="debug-value">Loading...</div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-label">Last Error:</div>
+        <div id="debugLastError" class="debug-value">None</div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-label">Background Status:</div>
+        <div id="debugBgStatus" class="debug-value">Checking...</div>
+      </div>
+      <div class="debug-section">
+        <div class="debug-label">Recent Logs:</div>
+        <div id="debugLogs" class="debug-logs">No logs yet</div>
+      </div>
+    </div>
+  </div>
   
   <div class="footer">
     <a href="https://72e8ead4-9d0c-4485-a095-a1eaa2a9aaac.lovableproject.com" target="_blank">Open Dashboard</a>

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useEffect } from 'react';
 
 export interface Team {
   id: string;
@@ -30,6 +31,36 @@ export interface SyncHistory {
 }
 
 export function useTeams() {
+  const queryClient = useQueryClient();
+
+  // Set up real-time subscription for teams table
+  useEffect(() => {
+    console.log('[Realtime] Setting up teams subscription...');
+    
+    const channel = supabase
+      .channel('teams-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'teams'
+        },
+        (payload) => {
+          console.log('[Realtime] Teams change detected:', payload);
+          queryClient.invalidateQueries({ queryKey: ['teams'] });
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Teams subscription status:', status);
+      });
+
+    return () => {
+      console.log('[Realtime] Cleaning up teams subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   return useQuery({
     queryKey: ['teams'],
     queryFn: async () => {
