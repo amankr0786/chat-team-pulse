@@ -12,6 +12,7 @@ import { useState } from 'react';
 export function AutomationStatus() {
   const { data: scheduler, isLoading, refetch } = useSchedulerStatus();
   const [isTriggering, setIsTriggering] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
 
   const handleRunSyncNow = async () => {
     setIsTriggering(true);
@@ -33,6 +34,29 @@ export function AutomationStatus() {
       toast.error('Failed to trigger sync');
     } finally {
       setIsTriggering(false);
+    }
+  };
+
+  const handleStopSync = async () => {
+    setIsStopping(true);
+    try {
+      const { error } = await supabase.functions.invoke('update-scheduler-status', {
+        body: {
+          status: 'completed',
+          profiles_synced: scheduler?.profiles_synced || 0,
+          total_profiles: scheduler?.total_profiles || 0,
+        },
+      });
+      
+      if (error) throw error;
+      
+      toast.success('Sync stopped.');
+      refetch();
+    } catch (error) {
+      console.error('Failed to stop sync:', error);
+      toast.error('Failed to stop sync');
+    } finally {
+      setIsStopping(false);
     }
   };
 
@@ -107,15 +131,30 @@ export function AutomationStatus() {
             <Server className="h-5 w-5 text-primary" />
             Automation Status
           </CardTitle>
-          <Button 
-            size="sm" 
-            className="gap-1.5"
-            onClick={handleRunSyncNow}
-            disabled={isTriggering || scheduler.status === 'running'}
-          >
-            <Zap className="h-4 w-4" />
-            Run Sync Now
-          </Button>
+          <div className="flex gap-2">
+            {scheduler.status === 'running' ? (
+              <Button 
+                size="sm" 
+                variant="destructive"
+                className="gap-1.5"
+                onClick={handleStopSync}
+                disabled={isStopping}
+              >
+                <XCircle className="h-4 w-4" />
+                Stop Sync
+              </Button>
+            ) : (
+              <Button 
+                size="sm" 
+                className="gap-1.5"
+                onClick={handleRunSyncNow}
+                disabled={isTriggering}
+              >
+                <Zap className="h-4 w-4" />
+                Run Sync Now
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
