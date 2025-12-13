@@ -155,7 +155,7 @@ export function TeamDetails({ team, open, onClose }: TeamDetailsProps) {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {member.created_at ? format(new Date(member.created_at), "MMM d, yyyy") : "—"}
+                          {member.joined_at ? format(new Date(member.joined_at), "d MMM yy") : "—"}
                         </TableCell>
                       </TableRow>
                     ))
