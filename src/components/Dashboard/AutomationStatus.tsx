@@ -18,9 +18,9 @@ export function AutomationStatus() {
     try {
       const { error } = await supabase.functions.invoke('update-scheduler-status', {
         body: {
-          status: 'pending',
-          trigger_manual: true,
-          next_run_at: new Date().toISOString(),
+          status: 'running',
+          profiles_synced: 0,
+          total_profiles: scheduler?.total_profiles || 0,
         },
       });
       
