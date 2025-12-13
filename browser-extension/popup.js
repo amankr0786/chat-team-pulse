@@ -2,33 +2,148 @@ const API_URL = 'https://cpmtbnsujfdumwdmsdrc.supabase.co/functions/v1/sync-team
 
 const statusEl = document.getElementById('status');
 const syncBtn = document.getElementById('syncBtn');
+const refreshBtn = document.getElementById('refreshBtn');
 const teamNameInput = document.getElementById('teamName');
 const membersPreview = document.getElementById('membersPreview');
-const autoSyncToggle = document.getElementById('autoSyncToggle');
-const autoCloseToggle = document.getElementById('autoCloseToggle');
+const autoSyncBadge = document.getElementById('autoSyncBadge');
+const toggleDebugBtn = document.getElementById('toggleDebug');
+const debugContent = document.getElementById('debugContent');
+const debugLastSync = document.getElementById('debugLastSync');
+const debugLastError = document.getElementById('debugLastError');
+const debugBgStatus = document.getElementById('debugBgStatus');
+const debugLogs = document.getElementById('debugLogs');
 
-// Load saved settings
-chrome.storage.local.get(['autoSync', 'autoClose'], (result) => {
-  if (autoSyncToggle) autoSyncToggle.checked = result.autoSync || false;
-  if (autoCloseToggle) autoCloseToggle.checked = result.autoClose || false;
-});
+// Debug logs storage
+let debugLogEntries = [];
+const MAX_LOG_ENTRIES = 20;
 
-// Save settings when changed
-if (autoSyncToggle) {
-  autoSyncToggle.addEventListener('change', () => {
-    chrome.storage.local.set({ autoSync: autoSyncToggle.checked });
+function addDebugLog(message, type = 'info') {
+  const timestamp = new Date().toLocaleTimeString();
+  debugLogEntries.unshift({ timestamp, message, type });
+  if (debugLogEntries.length > MAX_LOG_ENTRIES) {
+    debugLogEntries = debugLogEntries.slice(0, MAX_LOG_ENTRIES);
+  }
+  updateDebugLogs();
+  // Also save to storage for persistence
+  chrome.storage.local.set({ debugLogs: debugLogEntries });
+}
+
+function updateDebugLogs() {
+  if (!debugLogs) return;
+  
+  if (debugLogEntries.length === 0) {
+    debugLogs.innerHTML = '<div class="debug-log-entry">No logs yet</div>';
+    return;
+  }
+  
+  debugLogs.innerHTML = debugLogEntries.map(entry => `
+    <div class="debug-log-entry">
+      <span class="debug-log-time">[${entry.timestamp}]</span>
+      <span class="debug-log-msg ${entry.type}">${entry.message}</span>
+    </div>
+  `).join('');
+}
+
+async function loadDebugInfo() {
+  try {
+    // Load stored debug info
+    const storage = await chrome.storage.local.get(['lastSync', 'lastError', 'debugLogs']);
+    
+    // Last sync info
+    if (storage.lastSync) {
+      const sync = storage.lastSync;
+      const syncTime = new Date(sync.timestamp).toLocaleString();
+      debugLastSync.innerHTML = `
+        <span class="success">✓ ${sync.teamName}</span><br>
+        Members: ${sync.memberCount}<br>
+        Time: ${syncTime}
+      `;
+      debugLastSync.className = 'debug-value success';
+    } else {
+      debugLastSync.textContent = 'No sync recorded';
+      debugLastSync.className = 'debug-value warning';
+    }
+    
+    // Last error info
+    if (storage.lastError) {
+      const error = storage.lastError;
+      const errorTime = new Date(error.timestamp).toLocaleString();
+      debugLastError.innerHTML = `
+        <span class="error">${error.message}</span><br>
+        Time: ${errorTime}
+      `;
+      debugLastError.className = 'debug-value error';
+    } else {
+      debugLastError.textContent = 'None';
+      debugLastError.className = 'debug-value success';
+    }
+    
+    // Load saved logs
+    if (storage.debugLogs) {
+      debugLogEntries = storage.debugLogs;
+      updateDebugLogs();
+    }
+    
+    // Check background service worker status
+    checkBackgroundStatus();
+    
+  } catch (error) {
+    console.error('Error loading debug info:', error);
+    addDebugLog(`Error loading debug info: ${error.message}`, 'error');
+  }
+}
+
+async function checkBackgroundStatus() {
+  try {
+    // Try to communicate with background script
+    const response = await chrome.runtime.sendMessage({ type: 'ping' });
+    if (response && response.status === 'ok') {
+      debugBgStatus.textContent = '✓ Running';
+      debugBgStatus.className = 'debug-value success';
+      
+      // Show auto-sync badge if auto-sync is active
+      if (autoSyncBadge) {
+        autoSyncBadge.style.display = 'inline-block';
+      }
+    } else {
+      debugBgStatus.textContent = '⚠ No response';
+      debugBgStatus.className = 'debug-value warning';
+    }
+  } catch (error) {
+    debugBgStatus.textContent = '✗ Not running - Reload extension';
+    debugBgStatus.className = 'debug-value error';
+    if (autoSyncBadge) {
+      autoSyncBadge.style.display = 'none';
+    }
+  }
+}
+
+// Toggle debug panel visibility
+if (toggleDebugBtn) {
+  toggleDebugBtn.addEventListener('click', () => {
+    if (debugContent.style.display === 'none') {
+      debugContent.style.display = 'block';
+      toggleDebugBtn.textContent = 'Hide';
+    } else {
+      debugContent.style.display = 'none';
+      toggleDebugBtn.textContent = 'Show';
+    }
   });
 }
 
-if (autoCloseToggle) {
-  autoCloseToggle.addEventListener('change', () => {
-    chrome.storage.local.set({ autoClose: autoCloseToggle.checked });
+// Refresh button
+if (refreshBtn) {
+  refreshBtn.addEventListener('click', () => {
+    addDebugLog('Manual refresh triggered');
+    loadDebugInfo();
+    setStatus('Debug info refreshed', 'info');
   });
 }
 
 function setStatus(message, type = 'info') {
   statusEl.textContent = message;
   statusEl.className = `status ${type}`;
+  addDebugLog(message, type);
 }
 
 function capitalizeRole(role) {
@@ -63,12 +178,16 @@ function updateBadge(success) {
 }
 
 async function scanPage() {
+  addDebugLog('Scanning page...');
+  
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   
   if (!tab.url?.includes('chatgpt.com/admin')) {
     setStatus('Please navigate to ChatGPT Admin → Members page first.', 'warning');
     return null;
   }
+  
+  addDebugLog(`Tab URL: ${tab.url}`);
   
   const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
@@ -212,10 +331,15 @@ async function scanPage() {
     }
   });
   
-  return results[0]?.result;
+  const result = results[0]?.result;
+  addDebugLog(`Scan result: ${result?.members?.length || 0} members found`);
+  
+  return result;
 }
 
 async function syncToServer(teamName, members) {
+  addDebugLog(`Syncing ${members.length} members to server...`);
+  
   const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
@@ -224,8 +348,11 @@ async function syncToServer(teamName, members) {
     body: JSON.stringify({ teamName, members })
   });
   
+  addDebugLog(`Server response: ${response.status}`);
+  
   if (!response.ok) {
     const errorText = await response.text();
+    addDebugLog(`Server error: ${errorText}`, 'error');
     throw new Error(`Server error: ${response.status} - ${errorText}`);
   }
   
@@ -269,16 +396,8 @@ async function performSync(autoTriggered = false) {
     setStatus(`✓ Synced ${data.members.length} members to "${teamName}"`, 'success');
     updateBadge(true);
     
-    // Check if auto-close is enabled
-    const settings = await chrome.storage.local.get(['autoClose']);
-    if (autoTriggered && settings.autoClose) {
-      setTimeout(async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) {
-          chrome.tabs.remove(tab.id);
-        }
-      }, 2000); // Wait 2 seconds before closing
-    }
+    // Reload debug info to show updated last sync
+    loadDebugInfo();
     
     return true;
     
@@ -286,6 +405,16 @@ async function performSync(autoTriggered = false) {
     console.error('Sync error:', error);
     setStatus(`Error: ${error.message}`, 'error');
     updateBadge(false);
+    
+    // Store error for debug panel
+    chrome.storage.local.set({
+      lastError: {
+        message: error.message,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    loadDebugInfo();
     return false;
   } finally {
     if (syncBtn) syncBtn.disabled = false;
@@ -296,6 +425,10 @@ async function performSync(autoTriggered = false) {
 if (syncBtn) {
   syncBtn.addEventListener('click', () => performSync(false));
 }
+
+// Initialize
+addDebugLog('Popup opened');
+loadDebugInfo();
 
 // Auto-scan when popup opens
 scanPage().then(data => {
@@ -308,14 +441,8 @@ scanPage().then(data => {
     if (data.members?.length > 0) {
       showMembers(data.members);
       setStatus(`Found ${data.members.length} members. Click Sync to upload.`, 'info');
-      
-      // Check if auto-sync is enabled
-      chrome.storage.local.get(['autoSync'], async (result) => {
-        if (result.autoSync) {
-          setStatus('Auto-sync enabled. Syncing...', 'info');
-          await performSync(true);
-        }
-      });
     }
   }
-}).catch(() => {});
+}).catch((error) => {
+  addDebugLog(`Auto-scan error: ${error.message}`, 'error');
+});

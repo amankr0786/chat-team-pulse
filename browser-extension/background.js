@@ -8,7 +8,16 @@ const ADMIN_MEMBERS_PATTERN = /^https:\/\/chatgpt\.com\/admin\/[^\/]+\/members/;
 // Track tabs that have been synced to avoid duplicate syncs
 const syncedTabs = new Set();
 
-console.log('[Background] Service worker initialized');
+console.log('[Background] Service worker initialized at', new Date().toISOString());
+
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'ping') {
+    console.log('[Background] Received ping from popup');
+    sendResponse({ status: 'ok', timestamp: new Date().toISOString() });
+  }
+  return true;
+});
 
 // Listen for tab updates
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
