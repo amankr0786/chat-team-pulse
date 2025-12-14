@@ -160,7 +160,10 @@ export type Database = {
           last_synced_at: string | null
           member_count: number | null
           name: string
+          organization_id: string | null
+          owner_email: string | null
           updated_at: string
+          workspace_id: string | null
         }
         Insert: {
           chatgpt_team_id?: string | null
@@ -169,7 +172,10 @@ export type Database = {
           last_synced_at?: string | null
           member_count?: number | null
           name: string
+          organization_id?: string | null
+          owner_email?: string | null
           updated_at?: string
+          workspace_id?: string | null
         }
         Update: {
           chatgpt_team_id?: string | null
@@ -178,7 +184,10 @@ export type Database = {
           last_synced_at?: string | null
           member_count?: number | null
           name?: string
+          organization_id?: string | null
+          owner_email?: string | null
           updated_at?: string
+          workspace_id?: string | null
         }
         Relationships: []
       }
