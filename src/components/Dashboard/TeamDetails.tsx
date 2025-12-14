@@ -69,6 +69,30 @@ export function TeamDetails({ team, open, onClose }: TeamDetailsProps) {
           </SheetDescription>
         </SheetHeader>
 
+        {/* Team metadata: owner, workspace, org */}
+        {team && (team.owner_email || team.workspace_id || team.organization_id) && (
+          <div className="grid gap-2 text-sm text-muted-foreground mb-4 mt-4">
+            {team.owner_email && (
+              <div className="flex justify-between">
+                <span className="font-medium text-foreground">Owner email</span>
+                <span>{team.owner_email}</span>
+              </div>
+            )}
+            {team.workspace_id && (
+              <div className="flex justify-between">
+                <span className="font-medium text-foreground">Workspace ID</span>
+                <span className="font-mono text-xs">{team.workspace_id}</span>
+              </div>
+            )}
+            {team.organization_id && (
+              <div className="flex justify-between">
+                <span className="font-medium text-foreground">Organization ID</span>
+                <span className="font-mono text-xs">{team.organization_id}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-6 space-y-6">
           {/* History Chart */}
           {chartData.length > 1 && (

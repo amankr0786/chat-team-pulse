@@ -19,6 +19,130 @@ const keepAlive = () => {
 };
 setInterval(keepAlive, 25000);
 
+// Helper function for sleep
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Extract workspace info from https://chatgpt.com/admin
+function extractAdminWorkspaceData() {
+  console.log('[Injected-Admin] === extractAdminWorkspaceData ===');
+  console.log('[Injected-Admin] URL:', window.location.href);
+
+  let workspaceId = null;
+  let organizationId = null;
+  let teamName = '';
+
+  // 1) Try Next.js __NEXT_DATA__ JSON
+  const nextEl = document.querySelector('script#__NEXT_DATA__');
+  if (nextEl && nextEl.textContent) {
+    try {
+      const data = JSON.parse(nextEl.textContent);
+
+      const seen = new Set();
+      function walk(obj) {
+        if (!obj || typeof obj !== 'object' || seen.has(obj)) return;
+        seen.add(obj);
+
+        if ('workspaceId' in obj && obj.workspaceId) {
+          workspaceId = String(obj.workspaceId);
+        }
+        if ('workspace_id' in obj && obj.workspace_id) {
+          workspaceId = String(obj.workspace_id);
+        }
+        if ('organizationId' in obj && obj.organizationId) {
+          organizationId = String(obj.organizationId);
+        }
+        if ('organization_id' in obj && obj.organization_id) {
+          organizationId = String(obj.organization_id);
+        }
+        if (!teamName) {
+          if ('workspaceName' in obj && obj.workspaceName) {
+            teamName = String(obj.workspaceName);
+          } else if ('teamName' in obj && obj.teamName) {
+            teamName = String(obj.teamName);
+          } else if ('organizationName' in obj && obj.organizationName) {
+            teamName = String(obj.organizationName);
+          }
+        }
+
+        for (const v of Object.values(obj)) {
+          if (v && typeof v === 'object') walk(v);
+        }
+      }
+
+      walk(data);
+    } catch (e) {
+      console.log('[Injected-Admin] Failed to parse __NEXT_DATA__:', e);
+    }
+  }
+
+  // 2) Fallback: visible heading in sidebar/admin UI
+  function normalize(s) {
+    return (s || '').replace(/\s+/g, ' ').trim();
+  }
+
+  if (!teamName) {
+    const root =
+      document.querySelector('aside') ||
+      document.querySelector('[role="navigation"]') ||
+      document.body;
+
+    const UI_BLACKLIST = new Set([
+      'Back to chat',
+      'General',
+      'Members',
+      'Permissions & roles',
+      'Billing',
+      'GPTs',
+      'Apps & Connectors',
+      'Groups',
+      'User analytics',
+      'Identity & access',
+      'Invite member',
+      'Account type',
+      'Date added',
+      'Name',
+    ]);
+
+    const els = Array.from(root.querySelectorAll('h1,h2,h3,div,span,p,a,button'))
+      .slice(0, 1200);
+
+    let best = { text: '', score: -1 };
+
+    for (const el of els) {
+      const text = normalize(el.textContent);
+      if (!text) continue;
+      if (text.length < 2 || text.length > 60) continue;
+      if (UI_BLACKLIST.has(text)) continue;
+      if (/members?/i.test(text)) continue;
+      if (/chatgpt|openai/i.test(text)) continue;
+
+      const r = el.getBoundingClientRect?.() || { top: 9999, left: 9999 };
+      let score = 0;
+      const tag = (el.tagName || '').toLowerCase();
+      if (tag === 'h1') score += 80;
+      if (tag === 'h2') score += 60;
+      if (tag === 'h3') score += 40;
+
+      const fs = parseFloat(getComputedStyle(el).fontSize || '0');
+      score += Math.min(40, fs);
+      score += Math.max(0, 400 - r.top) / 8;
+      score += Math.max(0, 400 - r.left) / 8;
+
+      if (score > best.score) best = { text, score };
+    }
+
+    teamName = best.text || teamName;
+  }
+
+  console.log('[Injected-Admin] teamName:', teamName);
+  console.log('[Injected-Admin] workspaceId:', workspaceId);
+  console.log('[Injected-Admin] organizationId:', organizationId);
+
+  return { teamName, workspaceId, organizationId };
+}
+
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Background] Received message:', message.type, 'from:', sender.tab?.url || 'popup');
@@ -91,154 +215,175 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
-// Main sync handler function
+// Main sync handler function - two-step workflow: /admin -> /admin/members
 async function handleTabSync(tabId, tab) {
   const tabKey = `${tabId}-${tab.url}`;
-  
+
   // Avoid duplicate syncs
   if (syncedTabs.has(tabKey)) {
     console.log('[Background] Tab already synced, skipping:', tabKey);
     return;
   }
-  
+
   console.log('[Background] ========================================');
   console.log('[Background] Starting sync for tab:', tabId);
-  console.log('[Background] URL:', tab.url);
+  console.log('[Background] Initial URL:', tab.url);
   console.log('[Background] Time:', new Date().toISOString());
   console.log('[Background] ========================================');
-  
+
   syncedTabs.add(tabKey);
-  
-  // Wait for page to fully render
-  console.log('[Background] Waiting 8 seconds for page to fully load...');
-  await new Promise(resolve => setTimeout(resolve, 8000));
-  
+
   try {
-    // Update badge to show syncing
     chrome.action.setBadgeText({ text: '...' });
     chrome.action.setBadgeBackgroundColor({ color: '#FFA500' });
-    
-    console.log('[Background] Extracting team data...');
-    
-    // Extract team data from the page
-    const results = await chrome.scripting.executeScript({
+
+    // 1) Go to /admin and extract workspace/org/teamName
+    console.log('[Background] Navigating to /admin for workspace info...');
+    await chrome.tabs.update(tabId, { url: 'https://chatgpt.com/admin' });
+    await sleep(10000); // wait 10 seconds
+
+    const adminResults = await chrome.scripting.executeScript({
       target: { tabId },
-      func: extractTeamData
+      func: extractAdminWorkspaceData,
     });
-    
-    console.log('[Background] Extraction results:', results);
-    
-    if (!results || !results[0] || !results[0].result) {
-      throw new Error('Failed to extract team data - no results returned');
+
+    if (!adminResults || !adminResults[0] || !adminResults[0].result) {
+      throw new Error('Failed to extract workspace info from /admin');
     }
-    
-    const { teamName, members } = results[0].result;
-    
-    console.log('[Background] ----------------------------------------');
-    console.log('[Background] Team Name:', teamName);
-    console.log('[Background] Member Count:', members.length);
-    console.log('[Background] Members:', JSON.stringify(members, null, 2));
-    console.log('[Background] ----------------------------------------');
-    
-    if (!teamName) {
-      throw new Error('Could not detect team name from page');
+
+    const adminInfo = adminResults[0].result;
+    console.log('[Background] Admin info:', adminInfo);
+
+    if (!adminInfo.teamName && !adminInfo.workspaceId) {
+      console.warn('[Background] No teamName/workspaceId from /admin, will still continue with members');
     }
-    
+
+    // 2) Go to /admin/members and extract members (we ignore its teamName)
+    console.log('[Background] Navigating to /admin/members for members...');
+    await chrome.tabs.update(tabId, { url: 'https://chatgpt.com/admin/members' });
+    await sleep(10000); // wait 10 seconds
+
+    console.log('[Background] Extracting team members...');
+    const memberResults = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: extractTeamData, // existing v2 extractor
+    });
+
+    if (!memberResults || !memberResults[0] || !memberResults[0].result) {
+      throw new Error('Failed to extract team members from /admin/members');
+    }
+
+    const membersResult = memberResults[0].result;
+    const members = membersResult.members || [];
+
+    console.log('[Background] Members extracted:', members.length);
     if (members.length === 0) {
-      throw new Error('No members found on page - page may not have loaded correctly');
+      throw new Error('No members found on members page');
     }
-    
-    // Send to Supabase edge function
-    console.log('[Background] Calling sync-team edge function...');
-    console.log('[Background] URL:', `${SUPABASE_URL}/functions/v1/sync-team`);
-    console.log('[Background] Payload:', JSON.stringify({ teamName, members }));
-    
+
+    // Determine owner email from members
+    const owner = members.find((m) => m.role === 'owner' || m.role === 'Owner');
+    const ownerEmail = owner?.email || null;
+
+    const teamName =
+      adminInfo.teamName ||
+      membersResult.teamName || // fallback only
+      'Unknown Team';
+
+    const payload = {
+      teamName,
+      workspaceId: adminInfo.workspaceId || null,
+      organizationId: adminInfo.organizationId || null,
+      ownerEmail,
+      members,
+    };
+
+    console.log('[Background] Payload to sync-team:', JSON.stringify(payload, null, 2));
+
     const response = await fetch(`${SUPABASE_URL}/functions/v1/sync-team`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey': SUPABASE_ANON_KEY
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ teamName, members })
+      body: JSON.stringify(payload),
     });
-    
+
     const responseText = await response.text();
     console.log('[Background] Response status:', response.status);
     console.log('[Background] Response body:', responseText);
-    
+
     if (!response.ok) {
       throw new Error(`API error: ${response.status} - ${responseText}`);
     }
-    
+
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (e) {
       throw new Error(`Invalid JSON response: ${responseText}`);
     }
-    
-    if (data.success) {
-      console.log('[Background] ✓ SYNC SUCCESSFUL!');
-      console.log('[Background] Team ID:', data.teamId);
-      console.log('[Background] Member count:', data.memberCount);
-      
-      chrome.action.setBadgeText({ text: '✓' });
-      chrome.action.setBadgeBackgroundColor({ color: '#22C55E' });
-      
-      // Store sync log
-      const syncLog = {
-        teamName,
-        memberCount: members.length,
-        timestamp: new Date().toISOString(),
-        tabUrl: tab.url,
-        success: true,
-        teamId: data.teamId
-      };
-      
-      chrome.storage.local.get(['syncLogs'], (result) => {
-        const logs = result.syncLogs || [];
-        logs.unshift(syncLog);
-        chrome.storage.local.set({
-          lastSync: syncLog,
-          syncLogs: logs.slice(0, 50)
-        });
-      });
-      
-      // Clear badge after 10 seconds
-      setTimeout(() => {
-        chrome.action.setBadgeText({ text: '' });
-      }, 10000);
-      
-    } else {
+
+    if (!data.success) {
       throw new Error(data.error || 'Sync returned success: false');
     }
-    
+
+    console.log('[Background] ✓ SYNC SUCCESSFUL!');
+    console.log('[Background] Team ID:', data.teamId);
+    console.log('[Background] Member count:', data.memberCount);
+
+    chrome.action.setBadgeText({ text: '✓' });
+    chrome.action.setBadgeBackgroundColor({ color: '#22C55E' });
+
+    const syncLog = {
+      teamName,
+      memberCount: members.length,
+      timestamp: new Date().toISOString(),
+      tabUrl: 'https://chatgpt.com/admin/members',
+      success: true,
+      teamId: data.teamId,
+      workspaceId: adminInfo.workspaceId || null,
+      organizationId: adminInfo.organizationId || null,
+      ownerEmail,
+    };
+
+    chrome.storage.local.get(['syncLogs'], (result) => {
+      const logs = result.syncLogs || [];
+      logs.unshift(syncLog);
+      chrome.storage.local.set({
+        lastSync: syncLog,
+        syncLogs: logs.slice(0, 50),
+      });
+    });
+
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 10000);
   } catch (error) {
     console.error('[Background] ✗ SYNC FAILED:', error.message);
     console.error('[Background] Full error:', error);
-    
+
     chrome.action.setBadgeText({ text: '!' });
     chrome.action.setBadgeBackgroundColor({ color: '#EF4444' });
-    
-    // Store error log
+
     const errorLog = {
       error: error.message,
       timestamp: new Date().toISOString(),
       tabUrl: tab.url,
-      success: false
+      success: false,
     };
-    
+
     chrome.storage.local.get(['syncLogs'], (result) => {
       const logs = result.syncLogs || [];
       logs.unshift(errorLog);
       chrome.storage.local.set({
         lastError: errorLog,
-        syncLogs: logs.slice(0, 50)
+        syncLogs: logs.slice(0, 50),
       });
     });
-    
-    // Remove from synced tabs to allow retry
+
+    // Allow retry next time
     syncedTabs.delete(tabKey);
   }
 }
@@ -347,7 +492,8 @@ function extractTeamData() {
       members.push({
         email: email.toLowerCase(),
         name,
-        role: 'Member'
+        role: 'Member',
+        joined_at: null
       });
     }
   } else {
@@ -381,7 +527,21 @@ function extractTeamData() {
         role = roleMatch[1].charAt(0).toUpperCase() + roleMatch[1].slice(1).toLowerCase();
       }
       
-      members.push({ email, name, role });
+      // Extract joined_at date
+      let joined_at = null;
+      const dateMatch = text.match(/(\w{3}\s+\d{1,2},?\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
+      if (dateMatch) {
+        const d = new Date(dateMatch[1]);
+        if (!Number.isNaN(d.getTime())) {
+          // Store as date-only UTC midnight to prevent timezone drift
+          const y = d.getFullYear();
+          const m = d.getMonth();
+          const day = d.getDate();
+          joined_at = new Date(Date.UTC(y, m, day)).toISOString();
+        }
+      }
+      
+      members.push({ email, name, role, joined_at });
     }
   }
   

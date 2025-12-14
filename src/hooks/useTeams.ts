@@ -10,6 +10,9 @@ export interface Team {
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
+  workspace_id?: string | null;
+  organization_id?: string | null;
+  owner_email?: string | null;
 }
 
 export interface TeamMember {
@@ -64,17 +67,30 @@ export function useTeams() {
   return useQuery({
     queryKey: ["teams"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("teams").select("*").order("updated_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("teams")
+        .select("*")
+        .order("updated_at", { ascending: false });
 
       if (error) throw error;
 
-      const byName = new Map<string, Team>();
+      const byKey = new Map<string, Team>();
       for (const t of data as Team[]) {
-        const key = (t.name || "").trim().toLowerCase();
-        if (!byName.has(key)) byName.set(key, t); // keep newest (because we ordered updated_at desc)
+        const workspaceKey = (t.workspace_id || "").trim();
+        const nameKey = !workspaceKey ? (t.name || "").trim().toLowerCase() : "";
+
+        const key = workspaceKey || nameKey;
+        if (!key) continue;
+
+        if (!byKey.has(key)) {
+          // because we ordered updated_at desc, first one is the newest
+          byKey.set(key, t);
+        }
       }
 
-      return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+      return Array.from(byKey.values()).sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "")
+      );
     },
   });
 }
